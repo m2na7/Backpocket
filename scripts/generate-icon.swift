@@ -77,7 +77,7 @@ let scriptURL = URL(fileURLWithPath: #filePath).standardizedFileURL
 let root = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
 let masterURL = root.appendingPathComponent("Resources/AppIcon-master.png")
 let icnsURL = root.appendingPathComponent("Resources/AppIcon.icns")
-let previewURL = root.appendingPathComponent("docs/app-icon.png")
+let previewURL = root.appendingPathComponent("docs/app-icon-v3.png")
 
 guard let source = CGImageSourceCreateWithURL(masterURL as CFURL, nil),
       let master = CGImageSourceCreateImageAtIndex(source, 0, nil)

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/app-icon.png" width="160" alt="Backpocket app icon">
+  <img src="docs/app-icon-v3.png" width="160" alt="Backpocket app icon">
 </p>
 
 <h1 align="center">Backpocket</h1>
