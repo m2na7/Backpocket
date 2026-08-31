@@ -16,7 +16,7 @@ so the highlighted tab is visible in the image. See CONTRIBUTING.md. -->
 
 # Checklist
 
-Per [CONTRIBUTING.md](https://github.com/m2na7/backpocket/blob/main/CONTRIBUTING.md):
+Per [CONTRIBUTING.md](https://github.com/m2na7/Backpocket/blob/main/CONTRIBUTING.md):
 
 - [ ] `make test` passes
 - [ ] `make lint` passes (formatting and `.lproj` key parity)

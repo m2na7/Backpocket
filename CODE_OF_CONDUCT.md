@@ -60,7 +60,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the maintainer responsible for enforcement by opening an issue at
-<https://github.com/m2na7/backpocket/issues> or through the maintainer's GitHub
+<https://github.com/m2na7/Backpocket/issues> or through the maintainer's GitHub
 profile, [@m2na7](https://github.com/m2na7).
 All complaints will be reviewed and investigated promptly and fairly.
 

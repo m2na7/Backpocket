@@ -12,7 +12,7 @@
 <p align="center"><a href="README.md">English</a> · <strong>한국어</strong></p>
 
 <p align="center">
-  <a href="https://github.com/m2na7/backpocket"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
+  <a href="https://github.com/m2na7/Backpocket"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
   <a href="Package.swift"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
 </p>
@@ -43,7 +43,7 @@
 brew install --cask m2na7/backpocket/backpocket
 ```
 
-직접 받고 싶다면 [릴리스](https://github.com/m2na7/backpocket/releases/latest)에서 zip을 내려받아 응용 프로그램 폴더에 넣으세요. 어느 쪽이든 이후 업데이트는 앱이 알아서 받아요.
+직접 받고 싶다면 [릴리스](https://github.com/m2na7/Backpocket/releases/latest)에서 zip을 내려받아 응용 프로그램 폴더에 넣으세요. 어느 쪽이든 이후 업데이트는 앱이 알아서 받아요.
 
 ## 단축키
 

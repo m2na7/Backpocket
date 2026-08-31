@@ -12,7 +12,7 @@ Pre-1.0, only the latest release gets fixes. Upgrade before reporting.
 ## Reporting a vulnerability
 
 Report privately through GitHub Security Advisories:
-<https://github.com/m2na7/backpocket/security/advisories/new>
+<https://github.com/m2na7/Backpocket/security/advisories/new>
 
 Do not open a public issue for a security problem. You'll get an
 acknowledgment within 7 days and a fix-or-status answer within 30. If a report

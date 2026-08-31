@@ -12,7 +12,7 @@
 <p align="center"><strong>English</strong> · <a href="README.ko.md">한국어</a></p>
 
 <p align="center">
-  <a href="https://github.com/m2na7/backpocket"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
+  <a href="https://github.com/m2na7/Backpocket"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
   <a href="Package.swift"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
 </p>
@@ -43,7 +43,7 @@ Some things are worth keeping even when you don't have time to organize them. Pu
 brew install --cask m2na7/backpocket/backpocket
 ```
 
-Prefer to do it by hand? Take the zip from [Releases](https://github.com/m2na7/backpocket/releases/latest) and drop it in Applications. Either way it updates itself from then on.
+Prefer to do it by hand? Take the zip from [Releases](https://github.com/m2na7/Backpocket/releases/latest) and drop it in Applications. Either way it updates itself from then on.
 
 ## Keyboard
 
