@@ -1,0 +1,133 @@
+"field.placeholder" = "検索、または入力して ↩ でメモ";
+
+"footer.items %lld" = "%lld件";
+"hint.toNotes" = "メモ";
+"hint.toClips" = "クリップボード";
+"hint.toLinks" = "リンク";
+"hint.settings" = "設定";
+"hint.stack" = "追加";
+
+"empty.none" = "コピーしたものがここに溜まります";
+"empty.willSaveNote" = "↩ でメモとして保存します";
+
+"notes.title" = "メモ";
+"notes.empty" = "メモはまだありません";
+"group.pinned" = "ピン留め";
+"group.today" = "今日";
+"group.last7" = "過去7日間";
+"group.last30" = "過去30日間";
+"action.saveNote" = "メモを保存";
+
+"menu.open" = "Backpocket を開く";
+"menu.settings" = "設定…";
+"menu.checkForUpdates" = "アップデートを確認…";
+"menu.quit" = "Backpocket を終了";
+
+"onboarding.title" = "アクセシビリティの許可が必要です";
+"onboarding.body" = "選んだ項目を貼り付けるには、Backpocket が ⌘V キーを代わりに押す必要があります。";
+"onboarding.openSettings" = "システム設定を開く";
+"onboarding.hint" = "オンにすると自動的に続行します";
+
+"settings.title" = "設定";
+"settings.tab.general" = "一般";
+"settings.tab.history" = "クリップボード";
+"settings.tab.shortcuts" = "ショートカット";
+"settings.shortcuts.items" = "項目の操作";
+"settings.shortcuts.note" = "クリックして新しいキーの組み合わせを押してください。esc でキャンセルします。";
+"settings.shortcuts.conflict" = "その組み合わせは既に使われています。以前のショートカットを維持します。";
+"settings.shortcuts.resetAll" = "デフォルトに戻す";
+"settings.tab.ignore" = "除外";
+"settings.section.data" = "データ";
+
+"settings.language" = "言語";
+"settings.language.system" = "システムと同じ";
+"settings.restartNote" = "アプリを再起動すると反映されます";
+"settings.restart" = "今すぐ再起動";
+"settings.launchAtLogin" = "ログイン時に開く";
+"settings.checkForUpdates" = "自動的にアップデートを確認";
+"settings.launchError" = "ログイン項目を設定できませんでした: %@";
+"settings.hotkey.open" = "パネルを開く";
+"settings.hotkey.recording" = "ショートカットを入力…";
+"settings.hotkey.error" = "この組み合わせは登録できませんでした — ほかのアプリが使用中の可能性があります。以前のショートカットを維持します。";
+"settings.hotkey.reserved" = "システムが使う組み合わせです — ここに割り当てると、すべてのアプリで使えなくなります。別の組み合わせを押してください。";
+"settings.hotkey.taken" = "パネルの項目操作がすでに使っている組み合わせです。以前のショートカットを維持します。";
+"settings.hotkey.inactive" = "現在、グローバルショートカットは動作していません — ほかのアプリがこの組み合わせを使用している可能性があります。別の組み合わせを割り当てるか、メニューバーからパネルを開いてください。";
+"settings.popupPosition" = "パネルの表示位置";
+"settings.panelSize" = "パネルの大きさ";
+"settings.panelSize.reset" = "デフォルトに戻す";
+"settings.panelSize.note" = "パネルの端をドラッグして大きさを、中央の仕切りをドラッグして左右の比率を調整します。次に開くときも保たれます。";
+"settings.linkRows" = "リンクの行数";
+"settings.linkClick" = "リンクの既定の動作";
+"popup.mouse" = "マウスポインタの位置";
+"popup.center" = "画面中央";
+
+"settings.pasteAutomatically" = "選択したらすぐ貼り付け";
+"settings.pasteAutomatically.note" = "オフにすると貼り付けずにコピーだけ行います。アクセシビリティの許可も不要になります。";
+"settings.showPreview" = "ポインタを合わせるとプレビューを表示";
+"settings.showNotes" = "メモ欄を表示";
+"settings.historyLimit" = "保存する最大件数";
+"limit.100" = "100件";
+"limit.500" = "500件";
+"limit.1000" = "1,000件";
+"limit.unlimited" = "制限なし";
+"settings.retention" = "保存期間";
+"retention.7" = "7日";
+"retention.14" = "14日";
+"retention.30" = "30日";
+"retention.never" = "ずっと保存";
+"settings.retention.note" = "メモとピン留めした項目は期間に関係なく残ります。";
+
+"settings.ignore.note" = "ここに追加したアプリでコピーした内容は記録しません。";
+"settings.ignore.empty" = "除外したアプリはありません";
+"settings.ignore.add" = "アプリを追加…";
+"settings.ignore.remove" = "選択したアプリを削除";
+
+"settings.clearHistory" = "クリップボード履歴を消去";
+"settings.clearHistory.note" = "ピン留めした項目とメモは残ります。";
+"settings.clearNotes" = "メモをすべて削除";
+"settings.resetAll" = "すべてリセット";
+"settings.resetAll.note" = "すべての項目を削除し、設定を初期状態に戻します。";
+"confirm.cannotUndo" = "この操作は元に戻せません。";
+"settings.storageError" = "一部の変更をディスクに保存できませんでした。ここに表示されている内容と保存されている内容が一致しない場合があります。";
+
+"edit.save" = "保存";
+"edit.saveAndPaste" = "保存して貼り付け";
+"edit.delete" = "削除";
+"edit.cancel" = "キャンセル";
+"edit.gone" = "この項目はもうありません — 編集中に削除されたため、保存されていません。閉じる前に内容を別の場所へコピーしてください。";
+"edit.storageFailed" = "ストレージが利用できないため、この編集を保存できませんでした。閉じる前に内容を別の場所へコピーしてください。";
+
+"ctx.paste" = "貼り付け";
+"ctx.toNote" = "メモに変換";
+"ctx.edit" = "編集";
+"ctx.star" = "ピン留め";
+"ctx.unstar" = "ピン留め解除";
+"ctx.delete" = "削除";
+
+"ctx.pasteMarkdown" = "Markdown として貼り付け";
+
+"kind.image" = "画像";
+"detail.tokens %lld" = "%lldトークン";
+
+"clips.title" = "クリップボード";
+"links.title" = "リンク";
+"links.empty" = "コピーしたリンクがここに集まります";
+"action.open" = "開く";
+"ctx.openLink" = "ブラウザで開く";
+"kind.link" = "リンク";
+
+"settings.collectLinks" = "リンクをまとめる";
+"linkcollect.keep" = "クリップボードのみ";
+"linkcollect.separate" = "リンクセクションのみ";
+"linkcollect.both" = "両方";
+"settings.collectLinks.note" = "リンクセクションはパネルの左側を2つに分けます。両方を選ぶとリンクがクリップボード一覧にも残るため、直前にコピーしたものが一覧から消えません。どちらでもリンクは保持期間と除外リストに従います。";
+"settings.fetchFavicons" = "リンクのファビコンを表示";
+"settings.fetchFavicons.note" = "ファビコンは各サイトから HTTPS で一度だけ取得して保存します。第三者サービスは経由せず、オフなら通信は一切ありません。";
+"settings.favicons.cache" = "ファビコンのキャッシュ";
+"settings.favicons.clear" = "消去";
+
+"hint.pasteStack %lld" = "%lld件を貼り付け";
+"hint.deleteStack %lld" = "%lld件を削除";
+"ctx.stackAdd" = "まとめて貼り付けに追加";
+"ctx.stackRemove" = "まとめて貼り付けから外す";
+

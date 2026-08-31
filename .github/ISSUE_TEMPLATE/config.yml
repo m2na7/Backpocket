@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and usage help
+    url: https://github.com/m2na7/backpocket/discussions
+    about: Ask in Discussions. Issues are for bugs and concrete feature proposals.

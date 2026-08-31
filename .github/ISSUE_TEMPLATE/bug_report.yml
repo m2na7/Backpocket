@@ -1,0 +1,71 @@
+name: Bug report
+description: Something broke or behaves wrong.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Backpocket version
+      description: The release version you downloaded, or `git rev-parse --short HEAD` for source builds.
+      placeholder: "0.1.0 / a1b2c3d"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "14.5 (23F79)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - GitHub Release zip
+        - Homebrew tap
+        - Built from source (build.sh / make app)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: paste-automatically
+    attributes:
+      label: Is "paste automatically" on?
+      description: The Settings toggle that requires accessibility permission. Paste bugs behave differently with it on and off.
+      options:
+        - "On"
+        - "Off"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps from a fresh launch, then what you expected and what actually happened.
+      placeholder: |
+        1. Copy text in Safari
+        2. Open the panel with Shift+Cmd+V
+        3. ...
+
+        Expected:
+        Actual:
+    validations:
+      required: true
+
+  - type: textarea
+    id: console-output
+    attributes:
+      label: Console output
+      description: >-
+        Backpocket logs under the subsystem `dev.m2na.backpocket`. Filter by that
+        subsystem in Console.app (or run
+        `log stream --predicate 'subsystem == "dev.m2na.backpocket"'`), reproduce
+        the bug, and paste the relevant lines. Scan the output for clipboard
+        contents you don't want public before posting.
+      render: text

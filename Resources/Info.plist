@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Backpocket</string>
+	<key>CFBundleDisplayName</key>
+	<string>Backpocket</string>
+	<key>CFBundleExecutable</key>
+	<string>Backpocket</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.m2na.backpocket</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ko</string>
+		<string>ja</string>
+		<string>zh-Hans</string>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 m2na7. MIT License.</string>
+	<!-- Sparkle. SUPublicEDKey is the public half of the update signing
+	     key — public by design, and the thing installed copies check every
+	     update against; its private half lives in the maintainer's Keychain
+	     and in the SPARKLE_PRIVATE_KEY secret. SUFeedURL is baked into every
+	     copy at build time and cannot be corrected by a later update — a
+	     wrong one leaves those installs asking a dead address forever — so
+	     build.sh refuses to publish a build whose feed is unset.
+
+	     SUEnableAutomaticChecks skips Sparkle's first-run "check
+	     automatically?" prompt and turns checking on. That is deliberate and
+	     is what makes the appcast's request log a usable count of live
+	     installs; the READMEs say so under Privacy. -->
+	<key>SUFeedURL</key>
+	<string>https://backpocket-appcast.minha3082.workers.dev/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>gqL3iNPg96kRYy0SiaCA3rnEm5TGsSSasqB2IUqSmD0=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

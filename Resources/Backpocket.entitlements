@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Applied only by BACKPOCKET_SANDBOX=1 ./build.sh; the free direct-download
+	     build ships unsandboxed and unentitled, exactly as before. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- The opt-in favicon fetcher (off by default) makes outbound HTTPS GETs
+	     to the link's own host. Outbound only; no server is ever run. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Settings > Ignored apps runs an NSOpenPanel over /Applications and
+	     reads each chosen bundle's Info.plist for its identifier. Read-only is
+	     enough: nothing is ever written back to a user-selected location.
+	     NOTE: this does NOT cover the file-copy feature. Files copied in
+	     Finder never pass through a panel, so no user-selected grant reaches
+	     them: a stored file pastes back as its path, silently. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+</dict>
+</plist>

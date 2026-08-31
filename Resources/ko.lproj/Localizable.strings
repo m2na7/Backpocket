@@ -1,0 +1,133 @@
+"field.placeholder" = "검색하거나, 입력 후 ↩로 메모";
+
+"footer.items %lld" = "%lld개 항목";
+"hint.toNotes" = "메모";
+"hint.toClips" = "클립보드";
+"hint.toLinks" = "링크";
+"hint.settings" = "설정";
+"hint.stack" = "담기";
+
+"empty.none" = "복사한 항목이 여기에 쌓입니다";
+"empty.willSaveNote" = "↩ 를 누르면 메모로 저장됩니다";
+
+"notes.title" = "메모";
+"notes.empty" = "아직 메모가 없습니다";
+"group.pinned" = "고정됨";
+"group.today" = "오늘";
+"group.last7" = "지난 7일";
+"group.last30" = "이전 30일";
+"action.saveNote" = "메모 저장";
+
+"menu.open" = "Backpocket 열기";
+"menu.settings" = "설정…";
+"menu.checkForUpdates" = "업데이트 확인…";
+"menu.quit" = "Backpocket 종료";
+
+"onboarding.title" = "손쉬운 사용 권한이 필요합니다";
+"onboarding.body" = "선택한 항목을 붙여넣으려면 Backpocket이 ⌘V 키를 대신 눌러야 합니다.";
+"onboarding.openSettings" = "시스템 설정 열기";
+"onboarding.hint" = "켜면 자동으로 이어집니다";
+
+"settings.title" = "설정";
+"settings.tab.general" = "일반";
+"settings.tab.history" = "클립보드";
+"settings.tab.shortcuts" = "단축키";
+"settings.shortcuts.items" = "항목 동작";
+"settings.shortcuts.note" = "클릭한 뒤 원하는 키 조합을 누르세요. esc로 취소합니다.";
+"settings.shortcuts.conflict" = "이미 다른 동작이 쓰는 조합입니다. 이전 단축키를 유지합니다.";
+"settings.shortcuts.resetAll" = "기본값으로 재설정";
+"settings.tab.ignore" = "제외";
+"settings.section.data" = "데이터";
+
+"settings.language" = "언어";
+"settings.language.system" = "시스템과 동일";
+"settings.restartNote" = "앱을 다시 실행하면 적용됩니다";
+"settings.restart" = "지금 다시 실행";
+"settings.launchAtLogin" = "로그인 시 열기";
+"settings.checkForUpdates" = "자동으로 업데이트 확인";
+"settings.launchError" = "자동 실행을 설정하지 못했습니다: %@";
+"settings.hotkey.open" = "패널 열기";
+"settings.hotkey.recording" = "단축키 입력…";
+"settings.hotkey.error" = "이 조합은 등록할 수 없습니다 — 다른 앱이 이미 사용 중일 수 있어요. 이전 단축키가 유지됩니다.";
+"settings.hotkey.reserved" = "시스템이 쓰는 조합입니다 — 여기에 지정하면 모든 앱에서 이 조합을 쓸 수 없게 됩니다. 다른 조합을 눌러 주세요.";
+"settings.hotkey.taken" = "패널의 항목 동작이 이미 쓰는 조합입니다. 이전 단축키가 유지됩니다.";
+"settings.hotkey.inactive" = "지금은 전역 단축키가 동작하지 않습니다 — 다른 앱이 이 조합을 쓰고 있을 수 있어요. 다른 조합을 지정하거나 메뉴 막대에서 패널을 여세요.";
+"settings.popupPosition" = "패널이 열리는 위치";
+"settings.panelSize" = "패널 크기";
+"settings.panelSize.reset" = "기본 크기로";
+"settings.panelSize.note" = "패널 가장자리를 끌어 크기를, 가운데 구분선을 끌어 좌우 비율을 조절합니다. 조절한 값은 다음에 열 때도 유지됩니다.";
+"settings.linkRows" = "링크 행 수";
+"settings.linkClick" = "링크 기본 동작";
+"popup.mouse" = "마우스 포인터 위치";
+"popup.center" = "화면 중앙";
+
+"settings.pasteAutomatically" = "선택하면 바로 붙여넣기";
+"settings.pasteAutomatically.note" = "끄면 붙여넣지 않고 복사만 해 둡니다. 손쉬운 사용 권한도 필요 없습니다.";
+"settings.showPreview" = "마우스를 올리면 미리보기 표시";
+"settings.showNotes" = "메모 칸 표시";
+"settings.historyLimit" = "최대 보관 개수";
+"limit.100" = "100개";
+"limit.500" = "500개";
+"limit.1000" = "1,000개";
+"limit.unlimited" = "제한 없음";
+"settings.retention" = "보관 기간";
+"retention.7" = "7일";
+"retention.14" = "14일";
+"retention.30" = "30일";
+"retention.never" = "계속 보관";
+"settings.retention.note" = "메모와 고정한 항목은 기간과 상관없이 남습니다.";
+
+"settings.ignore.note" = "여기 추가한 앱에서 복사한 내용은 기록하지 않습니다.";
+"settings.ignore.empty" = "제외한 앱이 없습니다";
+"settings.ignore.add" = "앱 추가…";
+"settings.ignore.remove" = "선택한 앱 제거";
+
+"settings.clearHistory" = "클립보드 기록 지우기";
+"settings.clearHistory.note" = "고정한 항목과 메모는 남습니다.";
+"settings.clearNotes" = "메모 모두 지우기";
+"settings.resetAll" = "전체 초기화";
+"settings.resetAll.note" = "모든 항목을 지우고 설정을 처음 상태로 되돌립니다.";
+"confirm.cannotUndo" = "이 동작은 되돌릴 수 없습니다.";
+"settings.storageError" = "일부 변경 사항을 디스크에 저장하지 못했습니다. 여기 보이는 내용이 실제 저장된 내용과 다를 수 있습니다.";
+
+"edit.save" = "저장";
+"edit.saveAndPaste" = "저장하고 붙여넣기";
+"edit.delete" = "삭제";
+"edit.cancel" = "취소";
+"edit.gone" = "이 항목은 사라졌습니다 — 편집하는 동안 삭제되어 저장되지 않았습니다. 닫기 전에 내용을 다른 곳에 복사해 두세요.";
+"edit.storageFailed" = "저장소를 쓸 수 없어 이 편집을 저장하지 못했습니다. 닫기 전에 내용을 다른 곳에 복사해 두세요.";
+
+"ctx.paste" = "붙여넣기";
+"ctx.toNote" = "메모로 전환";
+"ctx.edit" = "수정";
+"ctx.star" = "고정";
+"ctx.unstar" = "고정 해제";
+"ctx.delete" = "삭제";
+
+"ctx.pasteMarkdown" = "마크다운으로 붙여넣기";
+
+"kind.image" = "이미지";
+"detail.tokens %lld" = "%lld 토큰";
+
+"clips.title" = "클립보드";
+"links.title" = "링크";
+"links.empty" = "복사한 링크가 여기에 모입니다";
+"action.open" = "열기";
+"ctx.openLink" = "브라우저에서 열기";
+"kind.link" = "링크";
+
+"settings.collectLinks" = "링크 모으기";
+"linkcollect.keep" = "클립보드에만";
+"linkcollect.separate" = "링크 섹션에만";
+"linkcollect.both" = "양쪽 모두";
+"settings.collectLinks.note" = "링크 섹션은 패널 왼쪽을 둘로 나눕니다. 양쪽 모두를 고르면 링크가 클립보드 목록에도 그대로 남아, 방금 복사한 것이 목록에서 사라지지 않습니다. 어느 쪽이든 링크는 보관 기간과 제외 목록을 그대로 따릅니다.";
+"settings.fetchFavicons" = "링크 파비콘 표시";
+"settings.fetchFavicons.note" = "파비콘은 해당 사이트에서 HTTPS로 한 번만 가져와 저장하며, 제3자 서비스는 거치지 않습니다. 끄면 네트워크 요청이 전혀 없습니다.";
+"settings.favicons.cache" = "파비콘 캐시";
+"settings.favicons.clear" = "지우기";
+
+"hint.pasteStack %lld" = "%lld개 붙여넣기";
+"hint.deleteStack %lld" = "%lld개 삭제";
+"ctx.stackAdd" = "묶어 붙여넣기에 담기";
+"ctx.stackRemove" = "묶어 붙여넣기에서 빼기";
+

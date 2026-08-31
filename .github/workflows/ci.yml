@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push supersedes the previous run for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned, not defaulted. Without this the runner picks whatever Xcode the
+  # image currently ships, so `make lint` passing locally proves nothing about
+  # CI and the answer changes silently when GitHub bumps the image. The
+  # formatter in particular is a toolchain component: its output moves between
+  # Swift releases. Keep this equal to the version in CONTRIBUTING.md and
+  # .swift-version, and check the image inventory before changing it:
+  # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
+  DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - run: swift --version
+      - run: swift build
+      - run: swift test
+
+  lint:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      # swift-format ships with the toolchain; no install step.
+      - run: swift format lint --strict --recursive Sources Tests
+      # A string missing from one .lproj renders as its raw identifier rather
+      # than falling back to English, and nothing else in the build notices.
+      - run: ./scripts/check-localization.sh
+
+  # The release-config compile and the app bundle were previously first
+  # exercised at tag time, inside the release workflow, where a failure means a
+  # broken tag rather than a red PR.
+  package:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - run: swift build -c release
+      # No signing identity on the runner, so build.sh falls back to ad-hoc.
+      # That is the same path an unsigned release takes, and it is enough to
+      # prove the bundle assembles: binary, Info.plist, all four .lproj.
+      - run: ./build.sh release
+      - name: Check the bundle is complete
+        run: |
+          test -x build/Backpocket.app/Contents/MacOS/Backpocket
+          test -f build/Backpocket.app/Contents/Info.plist
+          for lang in en ko ja zh-Hans; do
+            test -f "build/Backpocket.app/Contents/Resources/$lang.lproj/Localizable.strings"
+          done
+          codesign --verify --deep --strict build/Backpocket.app

@@ -1,0 +1,3 @@
+import BackpocketKit
+
+BackpocketApp.main()

@@ -1,0 +1,14 @@
+# Every PR gets a reviewer assigned automatically. One maintainer today, so
+# every line names the same person — see the bus-factor note in
+# the maintainer's release runbook.
+#
+# The paths below are listed separately rather than folded into the catch-all
+# because they are where a mistake is expensive: the release pipeline holds the
+# signing secrets, build.sh decides what gets signed and with which identity,
+# and Storage owns notes, which are permanent user data.
+*                               @m2na7
+
+/.github/                       @m2na7
+/build.sh                       @m2na7
+/packaging/                     @m2na7
+/Sources/BackpocketKit/Storage/ @m2na7

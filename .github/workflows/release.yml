@@ -1,0 +1,183 @@
+name: Release
+
+# Releases are cut locally with `./scripts/release.sh`, because the signing
+# identity and the notarization credentials live in a keychain rather than in
+# this repository's secrets. So this runs only when someone asks for it: on a
+# tag trigger it would race that script for the same tag and win with an
+# unsigned build. Add DEVELOPER_ID_CERT_BASE64 and friends, then this becomes
+# the better path and the tag trigger can come back.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v (e.g. 0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # Same pin as ci.yml, and for the same reason: a tag build must use the
+  # toolchain CI has been proving green on, not whatever the image defaults to
+  # on the day someone tags. Change both files together.
+  DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
+
+jobs:
+  test:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - run: swift build
+      - run: swift test
+      - run: swift format lint --strict --recursive Sources Tests
+      - run: ./scripts/check-localization.sh
+
+  release:
+    needs: test
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      # Secrets are unreadable in job-level `if`; surface presence as env so
+      # steps can gate on it. Empty secret == unsigned (ad-hoc) release.
+      HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERT_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          # BUILD_NUMBER is the commit count; needs full history.
+          fetch-depth: 0
+
+      - name: Derive version
+        run: |
+          VERSION="${{ inputs.version }}"
+          case "$VERSION" in v*) echo "pass 0.1.0, not v0.1.0" >&2; exit 1 ;; esac
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - name: Import signing certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          DEVELOPER_ID_CERT_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          echo "$DEVELOPER_ID_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Auto-lock after 6h so a hung job can't leave it open forever.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -A -t cert -f pkcs12
+          # Without this, headless codesign hangs on a keychain-access prompt.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain
+          rm "$RUNNER_TEMP/cert.p12"
+
+          # The full identity name, because build.sh keys the hardened runtime
+          # and the timestamp off a "Developer ID Application:" prefix — and
+          # because signing has to happen inside build.sh, not after it. The
+          # app embeds Sparkle's framework, its XPC services and its updater,
+          # and signing the outer bundle does not touch any of them: re-signing
+          # afterwards would ship helpers still carrying the ad-hoc signature
+          # build.sh gave them, which Gatekeeper rejects on the user's machine.
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" |
+            sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          [ -n "$IDENTITY" ] || { echo "cert imported but no identity found" >&2; exit 1; }
+          echo "BACKPOCKET_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
+        # VERSION, BUILD_NUMBER and BACKPOCKET_SIGN_IDENTITY flow in from
+        # GITHUB_ENV above. Without the identity this falls back to ad-hoc,
+        # which is the unsigned path the steps below then treat as prerelease.
+        env:
+          BACKPOCKET_UNIVERSAL: "1"
+          # This is the one build that reaches users, so this is where a
+          # placeholder update feed becomes fatal rather than a warning.
+          BACKPOCKET_PUBLISHING: "1"
+        run: ./build.sh release
+
+      - name: Notarize and staple
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          xcrun notarytool submit build/Backpocket.zip \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait --timeout 15m
+          xcrun stapler staple build/Backpocket.app
+          # The first zip was only the notarization vehicle; the stapled
+          # ticket lives in the .app, so re-zip to actually ship it.
+          rm build/Backpocket.zip
+          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+
+      - name: Ad-hoc sign
+        if: env.HAS_SIGNING != 'true'
+        run: |
+          # Apple Silicon refuses to launch unsigned binaries; ad-hoc is the floor.
+          codesign --force --sign - build/Backpocket.app
+          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+
+      - name: Delete keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
+
+      # Shipped binaries are stripped, so a user's crash report is a list of
+      # addresses until it is symbolicated against the dSYM for that exact
+      # build. It cannot be regenerated from source later, and the runner is
+      # torn down after this job — if it is not attached here it is gone.
+      # Published rather than kept as an artifact: artifacts expire, and a
+      # crash report can arrive long after that.
+      - name: Package the symbols
+        run: ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
+
+      # The appcast is what installed copies read to learn a new version
+      # exists, and its EdDSA signature is what makes them willing to install
+      # it. Skipped when the key is absent so an unsigned prerelease still
+      # publishes — those are not offered as updates anyway.
+      #
+      # Generated here rather than by hand because the signature covers the
+      # exact zip that ships: sign a different build and every client rejects
+      # it, which is the failure mode this step exists to make impossible.
+      - name: Build the appcast
+        if: env.SPARKLE_PRIVATE_KEY != ''
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          tools=.build/artifacts/sparkle/Sparkle/bin
+          test -x "$tools/generate_appcast" || {
+            echo "Sparkle tools missing — did 'swift build' run?" >&2; exit 1; }
+
+          # generate_appcast wants a directory of releases and writes the XML
+          # beside them. Only the current zip is here, so the feed it produces
+          # names one version; clients only ever need the newest.
+          mkdir -p build/appcast
+          cp build/Backpocket.zip build/appcast/
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
+          "$tools/generate_appcast" \
+            --ed-key-file "$RUNNER_TEMP/sparkle_key" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/$TAG/" \
+            build/appcast
+          rm -f "$RUNNER_TEMP/sparkle_key"
+          cp build/appcast/appcast.xml build/appcast.xml
+
+      - name: Publish release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: |
+            build/Backpocket.zip
+            build/Backpocket.dSYM.zip
+            build/appcast.xml
+          generate_release_notes: true
+          # Unsigned builds go out as prereleases: users must clear quarantine
+          # by hand, so don't present them as the real thing.
+          prerelease: ${{ env.HAS_SIGNING != 'true' }}

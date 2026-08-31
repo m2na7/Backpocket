@@ -1,0 +1,133 @@
+"field.placeholder" = "搜索，或输入后按 ↩ 保存为笔记";
+
+"footer.items %lld" = "%lld 个项目";
+"hint.toNotes" = "笔记";
+"hint.toClips" = "剪贴板";
+"hint.toLinks" = "链接";
+"hint.settings" = "设置";
+"hint.stack" = "加入";
+
+"empty.none" = "复制的内容会出现在这里";
+"empty.willSaveNote" = "按 ↩ 保存为笔记";
+
+"notes.title" = "笔记";
+"notes.empty" = "还没有笔记";
+"group.pinned" = "已固定";
+"group.today" = "今天";
+"group.last7" = "最近 7 天";
+"group.last30" = "之前 30 天";
+"action.saveNote" = "保存笔记";
+
+"menu.open" = "打开 Backpocket";
+"menu.settings" = "设置…";
+"menu.checkForUpdates" = "检查更新…";
+"menu.quit" = "退出 Backpocket";
+
+"onboarding.title" = "需要辅助功能权限";
+"onboarding.body" = "要粘贴所选内容，Backpocket 需要代替你按下 ⌘V。";
+"onboarding.openSettings" = "打开系统设置";
+"onboarding.hint" = "开启后将自动继续";
+
+"settings.title" = "设置";
+"settings.tab.general" = "通用";
+"settings.tab.history" = "剪贴板";
+"settings.tab.shortcuts" = "快捷键";
+"settings.shortcuts.items" = "条目操作";
+"settings.shortcuts.note" = "点击快捷键后按下新的组合键，esc 取消。";
+"settings.shortcuts.conflict" = "该组合已被其他操作占用，保留原快捷键。";
+"settings.shortcuts.resetAll" = "恢复默认值";
+"settings.tab.ignore" = "排除";
+"settings.section.data" = "数据";
+
+"settings.language" = "语言";
+"settings.language.system" = "跟随系统";
+"settings.restartNote" = "重新启动应用后生效";
+"settings.restart" = "立即重新启动";
+"settings.launchAtLogin" = "登录时打开";
+"settings.checkForUpdates" = "自动检查更新";
+"settings.launchError" = "无法设置登录项：%@";
+"settings.hotkey.open" = "打开面板";
+"settings.hotkey.recording" = "按下快捷键…";
+"settings.hotkey.error" = "无法注册此组合 — 可能已被其他应用占用。已保留之前的快捷键。";
+"settings.hotkey.reserved" = "这是系统占用的组合 — 在这里绑定会让所有应用都用不了它。请换一个组合。";
+"settings.hotkey.taken" = "面板的项目操作已经在用这个组合。已保留之前的快捷键。";
+"settings.hotkey.inactive" = "当前没有生效的全局快捷键 — 可能有其他应用占用了这个组合。请换一个组合，或从菜单栏打开面板。";
+"settings.popupPosition" = "面板出现位置";
+"settings.panelSize" = "面板尺寸";
+"settings.panelSize.reset" = "恢复默认";
+"settings.panelSize.note" = "拖动面板边缘调整尺寸，拖动中间的分隔线调整左右比例，下次打开时会保留。";
+"settings.linkRows" = "链接行数";
+"settings.linkClick" = "链接默认操作";
+"popup.mouse" = "鼠标指针处";
+"popup.center" = "屏幕中央";
+
+"settings.pasteAutomatically" = "选中后立即粘贴";
+"settings.pasteAutomatically.note" = "关闭后仅复制到剪贴板，也无需辅助功能权限。";
+"settings.showPreview" = "悬停时显示预览";
+"settings.showNotes" = "显示笔记栏";
+"settings.historyLimit" = "最多保留数量";
+"limit.100" = "100 条";
+"limit.500" = "500 条";
+"limit.1000" = "1,000 条";
+"limit.unlimited" = "不限";
+"settings.retention" = "保留时长";
+"retention.7" = "7 天";
+"retention.14" = "14 天";
+"retention.30" = "30 天";
+"retention.never" = "永久保留";
+"settings.retention.note" = "笔记和固定的条目不受期限影响。";
+
+"settings.ignore.note" = "在这些应用中复制的内容不会被记录。";
+"settings.ignore.empty" = "没有排除的应用";
+"settings.ignore.add" = "添加应用…";
+"settings.ignore.remove" = "移除所选应用";
+
+"settings.clearHistory" = "清除剪贴板历史";
+"settings.clearHistory.note" = "固定的条目和笔记会保留。";
+"settings.clearNotes" = "删除所有笔记";
+"settings.resetAll" = "全部重置";
+"settings.resetAll.note" = "删除所有条目，并将设置恢复为默认。";
+"confirm.cannotUndo" = "此操作无法撤销。";
+"settings.storageError" = "部分更改未能写入磁盘，这里显示的内容可能与实际保存的不一致。";
+
+"edit.save" = "保存";
+"edit.saveAndPaste" = "保存并粘贴";
+"edit.delete" = "删除";
+"edit.cancel" = "取消";
+"edit.gone" = "这个项目已经不在了 — 它在你编辑时被删除，所以没有保存。关闭前请先把内容复制到别处。";
+"edit.storageFailed" = "存储不可用，这次编辑没能保存。关闭前请先把内容复制到别处。";
+
+"ctx.paste" = "粘贴";
+"ctx.toNote" = "转为笔记";
+"ctx.edit" = "编辑";
+"ctx.star" = "固定";
+"ctx.unstar" = "取消固定";
+"ctx.delete" = "删除";
+
+"ctx.pasteMarkdown" = "以 Markdown 粘贴";
+
+"kind.image" = "图片";
+"detail.tokens %lld" = "%lld 个 token";
+
+"clips.title" = "剪贴板";
+"links.title" = "链接";
+"links.empty" = "复制的链接会集中在这里";
+"action.open" = "打开";
+"ctx.openLink" = "在浏览器中打开";
+"kind.link" = "链接";
+
+"settings.collectLinks" = "收集链接";
+"linkcollect.keep" = "仅剪贴板";
+"linkcollect.separate" = "仅链接栏";
+"linkcollect.both" = "两者都显示";
+"settings.collectLinks.note" = "链接栏会将面板左侧一分为二。选择两者都显示时，链接同时保留在剪贴板列表中，刚复制的内容不会从列表里消失。无论哪种方式，链接都遵循保留期限和排除列表。";
+"settings.fetchFavicons" = "显示链接网站图标";
+"settings.fetchFavicons.note" = "网站图标通过 HTTPS 直接从各网站获取一次并缓存，不经过任何第三方服务；关闭后完全没有网络请求。";
+"settings.favicons.cache" = "网站图标缓存";
+"settings.favicons.clear" = "清除";
+
+"hint.pasteStack %lld" = "粘贴 %lld 项";
+"hint.deleteStack %lld" = "删除 %lld 项";
+"ctx.stackAdd" = "加入多项粘贴";
+"ctx.stackRemove" = "移出多项粘贴";
+

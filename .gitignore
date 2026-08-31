@@ -1,0 +1,21 @@
+.build/
+build/
+DerivedData/
+.DS_Store
+*.xcuserdata/
+xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+.omc/
+
+# Sparkle's `generate_keys -x` takes a file path, so a stray `-x -`
+# writes the update signing key into a file named `-` right here. It has
+# happened once. Nothing that looks like an exported key gets committed.
+/-
+*private-key*
+*.pem
+
+# Maintainer notes kept off the repository on purpose: the roadmap, the
+# release runbook, and the App Sandbox findings. They are working notes for
+# whoever runs the project, not documentation a visitor needs, and a public
+# roadmap on a project with no release yet reads as plans instead of work.
+notes/

@@ -1,0 +1,133 @@
+"field.placeholder" = "Search, or type and ↩ to save a note";
+
+"footer.items %lld" = "%lld items";
+"hint.toNotes" = "Notes";
+"hint.toClips" = "Clips";
+"hint.toLinks" = "Links";
+"hint.settings" = "Settings";
+"hint.stack" = "Stack";
+
+"empty.none" = "Things you copy will show up here";
+"empty.willSaveNote" = "Press ↩ to save as a note";
+
+"notes.title" = "Notes";
+"notes.empty" = "No notes yet";
+"group.pinned" = "Pinned";
+"group.today" = "Today";
+"group.last7" = "Last 7 Days";
+"group.last30" = "Previous 30 Days";
+"action.saveNote" = "Save note";
+
+"menu.open" = "Open Backpocket";
+"menu.settings" = "Settings…";
+"menu.checkForUpdates" = "Check for Updates…";
+"menu.quit" = "Quit Backpocket";
+
+"onboarding.title" = "Accessibility permission needed";
+"onboarding.body" = "To paste the item you pick, Backpocket needs to press ⌘V for you.";
+"onboarding.openSettings" = "Open System Settings";
+"onboarding.hint" = "Continues automatically once enabled";
+
+"settings.title" = "Settings";
+"settings.tab.general" = "General";
+"settings.tab.history" = "Clipboard";
+"settings.tab.shortcuts" = "Shortcuts";
+"settings.shortcuts.items" = "Item actions";
+"settings.shortcuts.note" = "Click a shortcut, then press the new combination. Esc cancels.";
+"settings.shortcuts.conflict" = "That combination is already in use. The previous shortcut was kept.";
+"settings.shortcuts.resetAll" = "Reset to Defaults";
+"settings.tab.ignore" = "Excluded";
+"settings.section.data" = "Data";
+
+"settings.language" = "Language";
+"settings.language.system" = "System default";
+"settings.restartNote" = "Takes effect after relaunching the app";
+"settings.restart" = "Relaunch Now";
+"settings.launchAtLogin" = "Open at login";
+"settings.checkForUpdates" = "Check for updates automatically";
+"settings.launchError" = "Couldn't set the login item: %@";
+"settings.hotkey.open" = "Open panel";
+"settings.hotkey.recording" = "Type shortcut…";
+"settings.hotkey.error" = "That combination could not be registered — another app may already use it. The previous shortcut was kept.";
+"settings.hotkey.reserved" = "That combination belongs to the system — binding it here would take it away from every app. Pick another one.";
+"settings.hotkey.taken" = "That combination is already an item action in the panel. The previous shortcut was kept.";
+"settings.hotkey.inactive" = "No global shortcut is active right now — another app may own this combination. Pick a different one, or open the panel from the menu bar.";
+"settings.popupPosition" = "Panel appears at";
+"settings.panelSize" = "Panel size";
+"settings.panelSize.reset" = "Reset to Default";
+"settings.panelSize.note" = "Drag the panel edges to resize it, and the middle divider to set the split. Both are remembered for the next time you open it.";
+"settings.linkRows" = "Link rows";
+"settings.linkClick" = "Link default action";
+"popup.mouse" = "Mouse pointer";
+"popup.center" = "Screen center";
+
+"settings.pasteAutomatically" = "Paste automatically";
+"settings.pasteAutomatically.note" = "When off, picking an item only copies it — and no accessibility permission is needed.";
+"settings.showPreview" = "Show preview on hover";
+"settings.showNotes" = "Show the notes column";
+"settings.historyLimit" = "Keep up to";
+"limit.100" = "100 items";
+"limit.500" = "500 items";
+"limit.1000" = "1,000 items";
+"limit.unlimited" = "No limit";
+"settings.retention" = "Keep history for";
+"retention.7" = "7 days";
+"retention.14" = "14 days";
+"retention.30" = "30 days";
+"retention.never" = "Forever";
+"settings.retention.note" = "Notes and pinned items are kept no matter what.";
+
+"settings.ignore.note" = "Anything copied in these apps is never recorded.";
+"settings.ignore.empty" = "No excluded apps";
+"settings.ignore.add" = "Add App…";
+"settings.ignore.remove" = "Remove selected app";
+
+"settings.clearHistory" = "Clear clipboard history";
+"settings.clearHistory.note" = "Pinned items and notes stay.";
+"settings.clearNotes" = "Delete all notes";
+"settings.resetAll" = "Reset everything";
+"settings.resetAll.note" = "Deletes every item and returns all settings to their defaults.";
+"confirm.cannotUndo" = "This can't be undone.";
+"settings.storageError" = "Some changes couldn't be written to disk, so what you see here may not match what is stored.";
+
+"edit.save" = "Save";
+"edit.saveAndPaste" = "Save and Paste";
+"edit.delete" = "Delete";
+"edit.cancel" = "Cancel";
+"edit.gone" = "This item is gone — it was removed while you were editing, so nothing was saved. Copy your text somewhere safe before closing.";
+"edit.storageFailed" = "This edit couldn't be saved — storage is unavailable. Copy your text somewhere safe before closing.";
+
+"ctx.paste" = "Paste";
+"ctx.toNote" = "Convert to Note";
+"ctx.edit" = "Edit";
+"ctx.star" = "Pin";
+"ctx.unstar" = "Unpin";
+"ctx.delete" = "Delete";
+
+"ctx.pasteMarkdown" = "Paste as Markdown";
+
+"kind.image" = "Image";
+"detail.tokens %lld" = "%lld tokens";
+
+"clips.title" = "Clipboard";
+"links.title" = "Links";
+"links.empty" = "Copied links collect here";
+"action.open" = "Open";
+"ctx.openLink" = "Open in Browser";
+"kind.link" = "Link";
+
+"settings.collectLinks" = "Collect links";
+"linkcollect.keep" = "Clipboard only";
+"linkcollect.separate" = "Links section only";
+"linkcollect.both" = "Both";
+"settings.collectLinks.note" = "A links section splits the panel's left side in two. Showing links in both leaves each one in the clipboard list as well, so nothing disappears from where you last saw it. Links follow the retention period and the exclusion list either way.";
+"settings.fetchFavicons" = "Show link favicons";
+"settings.fetchFavicons.note" = "Favicons are fetched once per site, over HTTPS, directly from that site — never through a third-party service. Off means zero network requests.";
+"settings.favicons.cache" = "Favicon cache";
+"settings.favicons.clear" = "Clear";
+
+"hint.pasteStack %lld" = "Paste %lld items";
+"hint.deleteStack %lld" = "Delete %lld";
+"ctx.stackAdd" = "Add to Paste Stack";
+"ctx.stackRemove" = "Remove from Paste Stack";
+

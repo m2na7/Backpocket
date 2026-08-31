@@ -1,0 +1,16 @@
+{
+    "version": 1,
+    "lineLength": 100,
+    "indentation": {
+        "spaces": 4
+    },
+    "respectsExistingLineBreaks": true,
+    "maximumBlankLines": 1,
+    "indentConditionalCompilationBlocks": false,
+    "rules": {
+        "AllPublicDeclarationsHaveDocumentation": false,
+        "OrderedImports": true,
+        "UseEarlyExits": false,
+        "NoBlockComments": true
+    }
+}
