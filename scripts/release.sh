@@ -20,6 +20,11 @@ cd "$(dirname "$0")/.."
 VERSION="${1:-}"
 PROFILE="${NOTARY_PROFILE:-backpocket}"
 TOOLS=.build/artifacts/sparkle/Sparkle/bin
+TAP_REPO="${TAP_REPO:-m2na7/homebrew-backpocket}"
+
+# Read from the plist rather than repeated here: this is the address shipped
+# builds ask forever, and two copies of it are two chances to disagree.
+FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' Resources/Info.plist)"
 
 if [ -z "$VERSION" ]; then
   echo "usage: ./scripts/release.sh <version>   e.g. 0.1.0" >&2
@@ -48,6 +53,12 @@ git diff --quiet && git diff --cached --quiet ||
 
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
 REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+
+# Checked now because both are written to at the very end, long after the
+# expensive part. A tap that cannot be pushed is worth knowing about before
+# notarization, not after.
+gh repo view "$TAP_REPO" >/dev/null 2>&1 || die "cannot reach the tap $TAP_REPO"
+[ -n "$FEED_URL" ] || die "Resources/Info.plist has no SUFeedURL"
 
 echo "  identity: $IDENTITY"
 echo "  repo:     $REPO"
@@ -107,14 +118,49 @@ gh release create "v$VERSION" \
   --generate-notes \
   build/Backpocket.zip build/Backpocket.dSYM.zip build/appcast.xml
 
+SHA256="$(shasum -a 256 build/Backpocket.zip | cut -d' ' -f1)"
+
+# The cask names an exact URL and an exact hash. Left stale, `brew install`
+# either fetches the previous version or aborts on a hash mismatch, and both
+# look like the app is broken rather than the recipe. Done here so the tap
+# cannot drift from the release it describes.
+step "Updating the Homebrew tap"
+TAP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TAP_DIR"' EXIT
+git clone -q "https://github.com/$TAP_REPO.git" "$TAP_DIR" || die "cannot clone $TAP_REPO"
+CASK="$TAP_DIR/Casks/backpocket.rb"
+[ -f "$CASK" ] || die "$TAP_REPO has no Casks/backpocket.rb"
+sed -i '' \
+  -e "s/^  version \".*\"$/  version \"$VERSION\"/" \
+  -e "s/^  sha256 \".*\"$/  sha256 \"$SHA256\"/" \
+  "$CASK"
+grep -q "version \"$VERSION\"" "$CASK" || die "cask version did not update"
+grep -q "sha256 \"$SHA256\"" "$CASK" || die "cask sha256 did not update"
+# Explicit identity: a clone carries no repo-local config, so without this the
+# commit takes whatever the global one happens to be.
+git -C "$TAP_DIR" config user.name "$(git config user.name)"
+git -C "$TAP_DIR" config user.email "$(git config user.email)"
+git -C "$TAP_DIR" commit -qam "chore: bump the cask to $VERSION"
+git -C "$TAP_DIR" push -q origin HEAD
+
+# Sparkle only learns a release exists when this file is served. Deploying it
+# is what turns a published release into one that reaches installed copies.
+step "Deploying the appcast"
+SITE=notes/appcast-site
+if [ -d "$SITE/public" ]; then
+  cp build/appcast.xml "$SITE/public/appcast.xml"
+  (cd "$SITE" && npx --yes wrangler deploy) || die "wrangler deploy failed"
+  sleep 2
+  curl -fsS "$FEED_URL" | grep -q "$VERSION" ||
+    die "the live feed does not mention $VERSION yet"
+else
+  echo "release.sh: $SITE is missing — upload build/appcast.xml by hand," >&2
+  echo "  or no installed copy will learn this release exists." >&2
+fi
+
 cat <<EOF
 
-Released v$VERSION.
+Released v$VERSION — tagged, published, cask bumped, feed live.
 
-  sha256 (for the Homebrew cask):
-  $(shasum -a 256 build/Backpocket.zip | cut -d' ' -f1)
-
-One step is left and nothing does it for you: upload build/appcast.xml to the
-Cloudflare Worker. Until it is there, no installed copy learns this release
-exists.
+  sha256: $SHA256
 EOF
