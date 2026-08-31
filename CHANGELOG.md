@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-01
+
+### Changed
+- New app icon. The menu-bar mark is unchanged — it is a monochrome template
+  image and always was.
+
 ## [0.1.1] - 2026-09-01
 
 No change to the app itself — this release exists to carry the first public
