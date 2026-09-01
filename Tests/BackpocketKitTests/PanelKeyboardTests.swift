@@ -26,6 +26,42 @@ struct PanelKeyboardTests {
         )
     }
 
+    // MARK: Undo
+
+    @Suite("Undo")
+    struct Undo {
+        private let tests = PanelKeyboardTests()
+
+        private var restorable: PanelKeyContext {
+            var context = PanelKeyContext()
+            context.canUndoDelete = true
+            return context
+        }
+
+        @Test func commandZRestoresADeleteWhenTheFieldIsEmpty() {
+            #expect(tests.command(.character("z"), command: true, restorable) == .undoDelete)
+        }
+
+        /// Clearing what you typed also leaves the field empty, and
+        /// that undo is the field's. Nothing to restore, nothing taken.
+        @Test func commandZStaysWithTheFieldWhenNoDeleteIsWaiting() {
+            #expect(tests.command(.character("z"), command: true) == .unhandled)
+        }
+
+        /// The regression this pair exists for: the search field is always
+        /// focused, so a ⌘Z that always meant "put the row back" would take
+        /// typing undo away from a user who was mid-search.
+        @Test func commandZGoesToTheFieldWhileThereIsAQuery() {
+            var typing = restorable
+            typing.hasQuery = true
+            #expect(tests.command(.character("z"), command: true, typing) == .unhandled)
+        }
+
+        @Test func plainZIsJustACharacter() {
+            #expect(tests.command(.character("z")) == .unhandled)
+        }
+    }
+
     // MARK: Auto-repeat
 
     @Suite("Auto-repeat")
@@ -305,6 +341,9 @@ struct PanelKeyboardTests {
         @Test func anUnboundCommandLetterIsNotSwallowed() {
             // Returning .handled here would eat ⌘A, ⌘C and ⌘V inside the
             // field: select-all, copy and paste would all stop working.
+            // ⌘Z is in this list too: it only leaves the field when a
+            // delete is actually waiting to be undone, which is not the
+            // case here.
             for character in "acvxz" {
                 #expect(tests.command(.character(character), command: true) == .unhandled)
             }
@@ -345,4 +384,5 @@ struct PanelTargetingTests {
                 hovered: "hovered", selected: "selected", selectionIsAutomatic: true) == "hovered"
         )
     }
+
 }

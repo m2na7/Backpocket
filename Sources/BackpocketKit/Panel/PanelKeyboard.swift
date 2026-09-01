@@ -43,6 +43,9 @@ struct PanelKeyContext: Equatable {
     /// note to land.
     var showsNotes = true
     var stackIsEmpty = true
+    /// Whether `Store` is still holding a delete that ⌘Z could put
+    /// back. The panel claims that key only while this is true.
+    var canUndoDelete = false
 }
 
 /// What a key press does to the panel.
@@ -64,6 +67,8 @@ enum PanelCommand: Equatable {
     case pasteSelection
     case pasteSlot(Int)
     case deleteSelection
+    /// Puts back what the last ⌘⌫ took, while `Store` still has it.
+    case undoDelete
     case saveNote
     case edit
     case togglePin
@@ -136,6 +141,14 @@ enum PanelKeyboard {
                 return .pasteSlot(slot - 1)
             }
             if character == "," { return .openSettings }
+            // ⌘Z stays the text field's key except in the one moment it
+            // has nothing to answer with: the field is empty and a
+            // delete is still restorable. An empty field is not enough
+            // on its own — clearing what you typed leaves it empty too,
+            // and that undo belongs to the field.
+            if character == "z", !context.hasQuery, context.canUndoDelete {
+                return .undoDelete
+            }
         }
 
         return .unhandled

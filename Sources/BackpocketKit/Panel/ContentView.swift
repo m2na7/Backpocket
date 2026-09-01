@@ -174,7 +174,8 @@ struct ContentView: View {
             hasMatches: hasMatches,
             hasSelection: selected != nil,
             showsNotes: showsNotes,
-            stackIsEmpty: stack.isEmpty
+            stackIsEmpty: stack.isEmpty,
+            canUndoDelete: store.canUndoDelete
         )
     }
 
@@ -784,6 +785,7 @@ struct ContentView: View {
         case .pasteSelection: paste()
         case .pasteSlot(let index): paste(at: index)
         case .deleteSelection: deleteSelected()
+        case .undoDelete: undoDelete()
         case .saveNote: saveNote()
         case .edit: startEdit()
         case .togglePin: togglePin()
@@ -920,6 +922,15 @@ struct ContentView: View {
         let doomed = stack.ids.compactMap { id in store.items.first { $0.id == id } }
         store.delete(doomed)
         stack.clear()
+    }
+
+    /// Restores the last delete, if `Store` is still holding it. Nothing
+    /// happens once its window has passed — the key is silent rather than
+    /// wrong, because an alert about a delete the user has stopped thinking
+    /// about is worse than no answer.
+    private func undoDelete() {
+        guard store.undoDelete() else { return }
+        hoverState.dropHighlight()
     }
 
     private func deleteSelected() {
