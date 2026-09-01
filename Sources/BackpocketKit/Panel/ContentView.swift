@@ -175,7 +175,9 @@ struct ContentView: View {
             hasSelection: selected != nil,
             showsNotes: showsNotes,
             stackIsEmpty: stack.isEmpty,
-            canUndoDelete: store.canUndoDelete
+            canUndoDelete: store.canUndoDelete,
+            deleteIsCommandBackspace: PanelShortcut.delete.current
+                == KeyBinding(key: "delete", modifiers: .command)
         )
     }
 

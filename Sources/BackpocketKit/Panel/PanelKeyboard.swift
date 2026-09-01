@@ -46,6 +46,10 @@ struct PanelKeyContext: Equatable {
     /// Whether `Store` is still holding a delete that ⌘Z could put
     /// back. The panel claims that key only while this is true.
     var canUndoDelete = false
+    /// Whether the delete shortcut is still bound to ⌘⌫, which is also how
+    /// a text field clears the line it is on. Rebound to anything else, the
+    /// collision below disappears and the row is always the target.
+    var deleteIsCommandBackspace = true
 }
 
 /// What a key press does to the panel.
@@ -127,7 +131,19 @@ enum PanelKeyboard {
             switch shortcut {
             case .edit: return .edit
             case .pin: return .togglePin
-            case .delete: return context.stackIsEmpty ? .deleteSelection : .deleteStack
+            case .delete:
+                // A collected handful is a transient mode and owns the key
+                // while it exists.
+                guard context.stackIsEmpty else { return .deleteStack }
+                // Otherwise ⌘⌫ is the field's: it is how macOS clears the
+                // line you are typing on, this field is always focused, and
+                // Escape closes the panel rather than emptying it — so
+                // claiming the key leaves a typed query with no way out but
+                // holding backspace, and destroys a clip on the way.
+                if context.hasQuery, context.deleteIsCommandBackspace {
+                    return .unhandled
+                }
+                return .deleteSelection
             case .stack: return .toggleStack
             case .openLink: return .openLink
             }

@@ -324,38 +324,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Fills an empty store with content that shows the product off: real
     /// source apps so icons resolve, varied content kinds, one pin, one image.
     private func seedDemo(into store: Store) async {
-        let safari = CopySource(name: "Safari", bundleID: "com.apple.Safari")
-        let xcode = CopySource(name: "Xcode", bundleID: "com.apple.dt.Xcode")
+        let chrome = CopySource(name: "Google Chrome", bundleID: "com.google.Chrome")
+        let cursor = CopySource(name: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92")
+        let code = CopySource(name: "Visual Studio Code", bundleID: "com.microsoft.VSCode")
         let terminal = CopySource(name: "Terminal", bundleID: "com.apple.Terminal")
+        let slack = CopySource(name: "Slack", bundleID: "com.tinyspeck.slackmacgap")
+        let figma = CopySource(name: "Figma", bundleID: "com.figma.Desktop")
+        let notion = CopySource(name: "Notion", bundleID: "notion.id")
 
         // Oldest first: every add lands at the front, so the last call ends
         // up at the top of the list.
-        store.addNote("Standup 10:30 — demo the panel, collect feedback")
-        store.add(
-            "The best interface is the one you never notice — it simply keeps up.",
-            source: safari
-        )
-        // Added first so the timestamp spread below pushes it months back —
-        // demo screenshots then show the older month buckets too.
         store.addNote("First sketch — clipboard history and notes in one panel")
-        store.add("https://developer.apple.com/documentation/swiftdata", source: safari)
-        store.add("https://github.com/m2na7/backpocket/pull/12", source: safari)
-        store.add("xcrun simctl list devices | grep Booted", source: terminal)
-        store.add(
-            "{\"name\": \"backpocket\", \"version\": \"1.4.0\", \"channels\": [\"beta\", \"stable\"]}",
-            source: xcode
-        )
-        store.addNote("Release notes draft: image clips, faster search, new hotkey")
+        store.addNote("Design review Thu 2pm — bring the empty-state options")
+        store.add("https://react.dev/reference/react/useSyncExternalStore", source: chrome)
+        store.add("#2F81F7", source: figma)
         store.add(
             """
-            func debounce(_ delay: Duration) async throws {
-                try await Task.sleep(for: delay)
+            type Result<T, E = Error> =
+              | { ok: true; value: T }
+              | { ok: false; error: E }
+            """,
+            source: cursor
+        )
+        store.add("https://www.typescriptlang.org/docs/handbook/2/generics.html", source: chrome)
+        store.addNote("Standup 10:30 — demo the panel, collect feedback")
+        store.add("pnpm dlx shadcn@latest add dialog", source: terminal)
+        store.add(
+            """
+            export function useDebounced<T>(value: T, delay = 300): T {
+              const [debounced, setDebounced] = useState(value)
+              useEffect(() => {
+                const id = setTimeout(() => setDebounced(value), delay)
+                return () => clearTimeout(id)
+              }, [value, delay])
+              return debounced
             }
             """,
-            source: xcode
+            source: cursor
+        )
+        store.add("https://github.com/m2na7/Backpocket/pull/12", source: chrome)
+        store.add(
+            "{\"name\": \"backpocket\", \"version\": \"1.4.0\", \"channels\": [\"beta\", \"stable\"]}",
+            source: code
+        )
+        store.addNote("Ask design about the empty state — it reads too quiet")
+        store.add("git rebase -i origin/main --autosquash", source: terminal)
+        store.add(
+            "Can you take the flaky test in CI? It fails ~1 in 5 on the runner.",
+            source: slack
+        )
+        store.add("https://news.ycombinator.com/item?id=41802570", source: chrome)
+        store.add(
+            """
+            const Panel = forwardRef<HTMLDivElement, PanelProps>(
+              ({ items, onSelect }, ref) => (
+                <div ref={ref} role="listbox">
+                  {items.map((item) => (
+                    <Row key={item.id} item={item} onSelect={onSelect} />
+                  ))}
+                </div>
+              )
+            )
+            """,
+            source: cursor
+        )
+        store.addNote("Release notes draft: image clips, faster search, new hotkey")
+        store.add("https://vercel.com/docs/functions/streaming", source: chrome)
+        store.add(
+            """
+            ## Panel keyboard
+            - `Enter` pastes the selected clip
+            - `Cmd+Enter` pastes a note
+            """,
+            source: notion
+        )
+        store.add("npm error ERESOLVE could not resolve peer react@^19.0.0", source: terminal)
+        store.addNote("Ship 0.2 before the conference — cut scope if it slips")
+        store.add(
+            "The best interface is the one you never notice — it simply keeps up.",
+            source: chrome
         )
         if let png = Self.demoGradientPNG() {
-            store.addImage(png, source: safari)
+            store.addImage(png, source: figma)
             // Image capture hashes and thumbnails off the main actor, so the
             // row is not in `items` yet. Without this wait the spread below
             // skips it and the demo image alone reads "now" — which makes the
@@ -363,23 +413,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await store.imageCapturesDidFinish()
         }
 
-        if let pinned = store.items.first(where: { $0.content.hasPrefix("xcrun") }) {
-            store.togglePin(pinned)
+        for prefix in ["git rebase", "#2F81F7"] {
+            if let pinned = store.items.first(where: { $0.content.hasPrefix(prefix) }) {
+                store.togglePin(pinned)
+            }
         }
 
-        // Every add stamped usedAt with "now"; spread the timestamps so the
-        // relative labels read like a lived-in history. Store keeps `items`
-        // sorted by usedAt descending, so the dates are assigned strictly
-        // descending in items order — anything else would break that
-        // invariant without the store noticing.
-        var date = Date().addingTimeInterval(-120)
-        var gap: TimeInterval = 300
+        // Every add stamped usedAt with "now". Clips and notes are spread
+        // differently on purpose: clips expire (default seven days) and would
+        // be purged out of the demo before it could be filmed, while notes
+        // never expire and are what the notes column groups into Today, Last
+        // 7 Days, months and years. So the deep past belongs to the notes and
+        // the clips stay inside the retention window.
+        //
+        // Store keeps `items` sorted by usedAt descending, so both passes
+        // assign strictly descending dates within their own kind.
+        var clipDate = Date().addingTimeInterval(-120)
+        var clipGap: TimeInterval = 900
+        var noteAge: [TimeInterval] = [
+            60 * 30,
+            3600 * 26,
+            86400 * 4,
+            86400 * 26,
+            86400 * 200,
+            86400 * 400,
+        ]
         for item in store.items {
-            item.usedAt = date
-            item.createdAt = date
-            date -= gap
-            // Widening gaps push the tail from minutes ago into days ago.
-            gap *= 3
+            if item.isNote {
+                let age = noteAge.isEmpty ? 86400 * 500 : noteAge.removeFirst()
+                item.usedAt = Date().addingTimeInterval(-age)
+            } else {
+                item.usedAt = clipDate
+                clipDate -= clipGap
+                // Widening, but capped well inside the seven-day default so
+                // nothing in the demo is eligible for expiry.
+                clipGap = min(clipGap * 1.6, 86400 * 0.9)
+            }
+            item.createdAt = item.usedAt
         }
         store.persistDemoSeed()
     }

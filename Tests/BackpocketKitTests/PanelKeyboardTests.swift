@@ -62,6 +62,46 @@ struct PanelKeyboardTests {
         }
     }
 
+    // MARK: Delete
+
+    @Suite("Delete")
+    struct Delete {
+        private let tests = PanelKeyboardTests()
+
+        private var searching: PanelKeyContext {
+            var context = PanelKeyContext()
+            context.hasQuery = true
+            return context
+        }
+
+        /// The reported bug: ⌘⌫ while typing a search deleted the top clip
+        /// instead of clearing the field. Escape closes the panel rather than
+        /// emptying it, so claiming this key left a typed query with no way
+        /// out — and cost a clip each time someone tried.
+        @Test func commandBackspaceClearsTheFieldWhileSearching() {
+            #expect(tests.command(.character("x"), shortcut: .delete, searching) == .unhandled)
+        }
+
+        @Test func commandBackspaceDeletesTheRowWhenTheFieldIsEmpty() {
+            #expect(tests.command(.character("x"), shortcut: .delete) == .deleteSelection)
+        }
+
+        /// Rebound away from ⌘⌫ there is nothing to collide with, so the row
+        /// stays the target even mid-search.
+        @Test func aReboundDeleteStillTargetsTheRowWhileSearching() {
+            var rebound = searching
+            rebound.deleteIsCommandBackspace = false
+            #expect(tests.command(.character("x"), shortcut: .delete, rebound) == .deleteSelection)
+        }
+
+        /// A collected handful is a mode of its own and outranks both.
+        @Test func aCollectedHandfulKeepsTheKeyWhileSearching() {
+            var collecting = searching
+            collecting.stackIsEmpty = false
+            #expect(tests.command(.character("x"), shortcut: .delete, collecting) == .deleteStack)
+        }
+    }
+
     // MARK: Auto-repeat
 
     @Suite("Auto-repeat")
