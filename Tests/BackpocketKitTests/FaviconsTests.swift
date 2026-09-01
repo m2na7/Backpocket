@@ -378,11 +378,13 @@ struct FaviconFetchingTests {
         }
     }
 
-    @Test func fetchingIsOffOnAFreshInstall() async throws {
-        // The one assertion that keeps the promise true out of the box: a
-        // default flipped to true ships a network feature nobody enabled.
+    @Test func fetchingIsOnOnAFreshInstall() async throws {
+        // Deliberate: a column of identical globes is not worth having. The
+        // assertion stays so the default is a decision someone has to change
+        // on purpose, in both directions — it was false until the row's
+        // legibility was judged to be worth the request.
         try await withFetching(nil) {
-            #expect(!FaviconFetching.isEnabled)
+            #expect(FaviconFetching.isEnabled)
         }
     }
 

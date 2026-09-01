@@ -679,10 +679,16 @@ actor FetchLimiter {
     }
 }
 
-/// Whether link rows may fetch favicons over the network. Off by default —
-/// the app's privacy promise is zero network calls unless asked.
+/// Whether link rows may fetch favicons over the network. On by default: a
+/// column of identical globes is not worth having, and the row only becomes
+/// scannable once each link wears its own site's mark.
+///
+/// The cost is real and is the reason this stays a switch. Each fetch tells
+/// the linked site's server that this machine holds that link, so a user who
+/// does not want that trade turns it off in Settings and the app makes no
+/// request at all.
 enum FaviconFetching {
-    static let `default` = false
+    static let `default` = true
 
     static var isEnabled: Bool {
         PreferenceStore.defaults.object(forKey: PreferenceKey.fetchFavicons) as? Bool ?? `default`

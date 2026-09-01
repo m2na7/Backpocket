@@ -660,7 +660,7 @@ struct PreferencesTests {
         #expect(PasteBehavior.default == true)
         #expect(PreviewBehavior.default == true)
         #expect(NotesVisibility.default == true)
-        #expect(FaviconFetching.default == false)
+        #expect(FaviconFetching.default == true)
         #expect(PopupPosition.default == .mouse)
         #expect(LinkCollection.default == .both)
         #expect(LinkClickAction.default == .paste)
