@@ -65,6 +65,14 @@ for key in LSApplicationCategoryType CFBundleIconName; do
 done
 [ -f "$APP/Contents/Resources/Assets.car" ] ||
   die "no compiled asset catalog — the store reads the icon from there, not the .icns"
+
+# The signature has to claim the same application identifier the profile
+# grants, and nothing in the payload may carry quarantine. Both are refused
+# after the upload finishes, which is the slowest way to learn either.
+codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q application-identifier ||
+  die "the signature has no application-identifier — it will not match the profile"
+[ "$(xattr -r "$APP" 2>/dev/null | grep -c quarantine)" = "0" ] ||
+  die "something in the bundle still carries com.apple.quarantine"
 echo "  no Sparkle, profile embedded, sandboxed, category and icon present, signature verifies"
 
 step "Packaging the installer"

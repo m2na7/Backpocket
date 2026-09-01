@@ -126,6 +126,25 @@ if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
     exit 1
   fi
   cp "$PROFILE_SRC" "$APP/Contents/embedded.provisionprofile"
+
+  # The store signs an app into its own identity: the profile carries the
+  # application identifier, and the signature has to carry the same one or the
+  # upload is refused for the mismatch. Both values are read from the profile
+  # rather than written down here, so they cannot drift from the one Apple
+  # issued.
+  security cms -D -i "$PROFILE_SRC" > /tmp/bp_profile.plist 2>/dev/null
+  APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
+    "Print :Entitlements:com.apple.application-identifier" /tmp/bp_profile.plist 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /tmp/bp_profile.plist)"
+  TEAM_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
+    "Print :Entitlements:com.apple.developer.team-identifier" /tmp/bp_profile.plist 2>/dev/null ||
+    echo "${APP_IDENTIFIER%%.*}")"
+
+  MAS_ENTITLEMENTS=/tmp/bp_mas.entitlements
+  cp Resources/Backpocket.entitlements "$MAS_ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $APP_IDENTIFIER" "$MAS_ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_IDENTIFIER" "$MAS_ENTITLEMENTS"
+  ENTITLEMENTS_FILE="$MAS_ENTITLEMENTS"
 fi
 
 # The menu-bar mark is a monochrome Retina template image, separate from the
@@ -219,8 +238,14 @@ fi
 # The App Store requires the sandbox, so BACKPOCKET_MAS implies it rather than
 # asking the caller to remember both.
 if [ "${BACKPOCKET_SANDBOX:-0}" = "1" ] || [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  # Quarantine rides along on anything downloaded through a browser — the
+  # provisioning profile above arrives that way — and the store rejects a
+  # package containing it. Cleared before signing, because clearing after
+  # would not invalidate the signature but would leave the copy Apple sees
+  # already stamped.
+  xattr -cr "$APP"
   codesign --force "${HARDENED[@]}" "${TIMESTAMP[@]}" --sign "$IDENTITY" \
-    --entitlements Resources/Backpocket.entitlements "$APP"
+    --entitlements "${ENTITLEMENTS_FILE:-Resources/Backpocket.entitlements}" "$APP"
   echo "Built $APP ($CONFIG, signed: $IDENTITY, sandboxed)"
 else
   codesign --force "${HARDENED[@]}" "${TIMESTAMP[@]}" --sign "$IDENTITY" "$APP"
