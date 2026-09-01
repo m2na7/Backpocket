@@ -96,6 +96,20 @@ if [ -f Resources/AppIcon.icns ]; then
   cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 fi
 
+# The App Store build carries the profile that says which team and certificate
+# are allowed to ship this bundle id. Its absence is fatal rather than a
+# warning: an upload without it is rejected after the package is built, and
+# finding that out at the upload step wastes the whole run.
+if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  PROFILE_SRC="${BACKPOCKET_PROFILE:-packaging/Backpocket_Mac_App_Store.provisionprofile}"
+  if [ ! -f "$PROFILE_SRC" ]; then
+    echo "build.sh: no provisioning profile at $PROFILE_SRC" >&2
+    echo "build.sh: download the Mac App Store profile, or set BACKPOCKET_PROFILE." >&2
+    exit 1
+  fi
+  cp "$PROFILE_SRC" "$APP/Contents/embedded.provisionprofile"
+fi
+
 # The menu-bar mark is a monochrome Retina template image, separate from the
 # full-color application icon. MenuBarIcon loads it from the finished bundle.
 if [ -f Resources/MenuBarIconTemplate@2x.png ]; then

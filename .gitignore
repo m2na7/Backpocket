@@ -19,3 +19,6 @@ xcuserdata/
 # whoever runs the project, not documentation a visitor needs, and a public
 # roadmap on a project with no release yet reads as plans instead of work.
 notes/
+
+# App Store provisioning profile — tied to one team and certificate.
+*.provisionprofile
