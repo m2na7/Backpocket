@@ -67,8 +67,6 @@ brew install --cask m2na7/backpocket/backpocket
 
 ## 기여
 
-클립과 메모는 SwiftData 한 테이블의 같은 행이에요. 편의를 위한 지름길이 아니라 이 제품의 논지 자체예요. AppKit `NSPanel` 위에 SwiftUI를 얹었고, 서드파티 의존성은 Sparkle 하나뿐이에요.
-
 [CONTRIBUTING.md](CONTRIBUTING.md) · [아키텍처](docs/ARCHITECTURE.md)
 
 ## 라이선스

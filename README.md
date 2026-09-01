@@ -67,8 +67,6 @@ Every shortcut above is rebindable in Settings.
 
 ## Contributing
 
-A clip and a note are the same row in one SwiftData table — that is the product thesis, not a shortcut. SwiftUI hosted in an AppKit `NSPanel`, with Sparkle as the only third-party dependency.
-
 [CONTRIBUTING.md](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md)
 
 ## License
