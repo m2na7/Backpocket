@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-09-02
+
+### Fixed
+- `Cmd+Backspace` while searching cleared the search field again instead of deleting a clip. The panel had been claiming the key unconditionally, so the ordinary way to clear what you had typed destroyed the top item — and since Escape closes the panel rather than emptying the field, there was no other way to clear a search. A collected handful still takes the key first, and a delete shortcut rebound away from `Cmd+Backspace` keeps deleting the row even mid-search.
+
 ## [0.1.3] - 2026-09-01
 
 ### Added
