@@ -60,6 +60,12 @@ REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 gh repo view "$TAP_REPO" >/dev/null 2>&1 || die "cannot reach the tap $TAP_REPO"
 [ -n "$FEED_URL" ] || die "Resources/Info.plist has no SUFeedURL"
 
+# The release body comes from CHANGELOG.md, so a missing entry is a
+# missing release note. Caught here rather than at publish time, when
+# the build and the notarization have already been paid for.
+./scripts/changelog-section.sh "$VERSION" >/dev/null ||
+  die "add a ## [$VERSION] entry to CHANGELOG.md first"
+
 echo "  identity: $IDENTITY"
 echo "  repo:     $REPO"
 echo "  version:  $VERSION"
@@ -113,10 +119,13 @@ step "Publishing"
 # message it was never given — after notarization has already been paid for.
 git tag -a "v$VERSION" -m "Backpocket v$VERSION"
 git push origin "v$VERSION"
+NOTES="$(mktemp)"
+./scripts/changelog-section.sh "$VERSION" > "$NOTES"
 gh release create "v$VERSION" \
   --title "v$VERSION" \
-  --generate-notes \
+  --notes-file "$NOTES" \
   build/Backpocket.zip build/Backpocket.dSYM.zip build/appcast.xml
+rm -f "$NOTES"
 
 SHA256="$(shasum -a 256 build/Backpocket.zip | cut -d' ' -f1)"
 

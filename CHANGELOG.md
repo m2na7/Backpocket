@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-09-01
+
+### Added
+- Deleting is undoable. `Cmd+Z` puts back what the last delete took — the whole batch at once if several rows went together — with its timestamps, pin state and source app intact. The window is short and the depth is three on purpose: holding deleted content any longer would quietly undo what expiry and Clear History are for. `Cmd+Z` still belongs to the search field whenever the field has something to undo.
+- The panel reads properly under VoiceOver. Each row announces what it is, what it holds and the state its trailing column shows — an image with its dimensions, a file with its name, a pinned row as pinned — and the edit and delete actions that only appear on hover are now reachable.
+
+### Changed
+- Link rows fetch favicons by default. A column of identical globes was not worth having. Each fetch does tell the linked site that this machine holds that link, so it stays a switch in Settings > Clipboard; existing installs keep whatever they had set.
+
 ## [0.1.2] - 2026-09-01
 
 ### Changed
