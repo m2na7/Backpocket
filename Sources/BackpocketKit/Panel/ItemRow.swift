@@ -133,6 +133,37 @@ struct ItemRow: View, @MainActor Equatable {
                     onActivate()
                 }
             }
+            .modifier(
+                RowSpeech(
+                    voice: voice,
+                    selected: highlighted,
+                    hint: "a11y.hint.paste",
+                    activate: onActivate
+                )
+            )
+            // Everything the row can do, since none of it is reachable
+            // otherwise: the pin and the pick badge are read-only glyphs and
+            // the rest lives in a right-click menu.
+            .accessibilityActions {
+                if item.isLink {
+                    Button("ctx.openLink", action: onOpenLink)
+                }
+                if !item.isImage {
+                    Button(
+                        stackNumber == nil ? "ctx.stackAdd" : "ctx.stackRemove",
+                        action: onToggleStack
+                    )
+                    Button("ctx.toNote", action: onConvert)
+                }
+                Button(isPinned ? "ctx.unstar" : "ctx.star", action: onTogglePin)
+                Button("ctx.delete", action: onDelete)
+            }
+    }
+
+    /// The row as a sentence. Built per render like the rest of the body, and
+    /// cheap for the same reason it is: every lookup behind it is cached.
+    private var voice: RowVoice {
+        RowVoice(clip: item, isPinned: isPinned, stackNumber: stackNumber)
     }
 
     /// Dropping onto the notes pane turns a clip into a note. Dragging out to
@@ -226,7 +257,7 @@ struct ItemRow: View, @MainActor Equatable {
                 .scaledToFit()
                 .frame(height: 22)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
-            Text(dimensions)
+            Text(imageDimensions(of: item.content))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -238,12 +269,6 @@ struct ItemRow: View, @MainActor Equatable {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-    }
-
-    /// The stored content is the placeholder "Image {W}×{H}"; next to the
-    /// thumbnail only the dimensions carry information.
-    private var dimensions: String {
-        item.content.split(separator: " ").last.map(String.init) ?? item.content
     }
 
     /// While searching, only the matched part goes bold. No color.

@@ -689,12 +689,17 @@ struct DetailContent: View {
                     maxWidth: min(imageMax.width, image.size.width),
                     maxHeight: min(imageMax.height, image.size.height)
                 )
+                // The pixels are the card's whole content, and nothing else
+                // in it says what they are.
+                .accessibilityLabel(Text("kind.image"))
         } else if let linkHost {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 7) {
                     Image(systemName: "globe")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
+                        // Says exactly what the host beside it says.
+                        .accessibilityHidden(true)
                     Text(linkHost)
                         .font(.system(size: 14, weight: .semibold))
                 }
@@ -722,26 +727,34 @@ struct DetailContent: View {
         }
     }
 
+    /// The footer's interpunct. Punctuation between fields, and read aloud as
+    /// "middle dot" between every one of them if left visible.
+    private var separator: some View {
+        Text("·").accessibilityHidden(true)
+    }
+
     private var footer: some View {
         HStack(spacing: 6) {
             if let icon = appIcon {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 13, height: 13)
+                    // The app's name is the next thing in the row.
+                    .accessibilityHidden(true)
             }
 
             Text(meta.isNote ? String(localized: "notes.title") : (meta.sourceApp ?? "—"))
 
-            Text("·")
+            separator
             Text(meta.createdAt, format: .relative(presentation: .named))
 
             if let language, language != .generic {
-                Text("·")
+                separator
                 Text(language.rawValue)
             }
 
             if linkHost != nil {
-                Text("·")
+                separator
                 Text("kind.link")
             }
 
@@ -751,7 +764,8 @@ struct DetailContent: View {
                 Text(imageStats)
             } else {
                 Text(verbatim: "\(meta.characters)")
-                Text("·")
+                    .accessibilityLabel(Text("a11y.characters \(meta.characters)"))
+                separator
                 Text("detail.tokens \(meta.tokens)")
             }
         }

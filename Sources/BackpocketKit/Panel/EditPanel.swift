@@ -237,6 +237,9 @@ private struct EditView: View {
             TextEditor(text: $text)
                 .font(.body)
                 .scrollContentBackground(.hidden)
+                // The window's own title is hidden, so an unlabelled editor
+                // is the only thing in it and announces nothing at all.
+                .accessibilityLabel(Text("a11y.noteText"))
                 .focused($focused)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -259,10 +262,13 @@ private struct EditView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text(subject.title)
-            Text("·")
+            // Punctuation between fields; "middle dot" as a spoken word is
+            // not what it is there for.
+            Text("·").accessibilityHidden(true)
             Text(subject.createdAt, format: .relative(presentation: .named))
             Spacer(minLength: 0)
             Text("\(text.count)")
+                .accessibilityLabel(Text("a11y.characters \(text.count)"))
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)

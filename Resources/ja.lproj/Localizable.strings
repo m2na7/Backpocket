@@ -131,3 +131,13 @@
 "ctx.stackAdd" = "まとめて貼り付けに追加";
 "ctx.stackRemove" = "まとめて貼り付けから外す";
 
+"a11y.kind.clip" = "クリップ";
+"a11y.kind.note" = "メモ";
+"a11y.kind.file" = "ファイル";
+"a11y.from %@" = "%@からコピー";
+"a11y.stack %lld" = "まとめて貼り付けの%lld番目";
+"a11y.hint.paste" = "この項目を貼り付けます";
+"a11y.hint.edit" = "このメモを編集します";
+"a11y.noteText" = "メモの内容";
+"a11y.characters %lld" = "%lld文字";
+
