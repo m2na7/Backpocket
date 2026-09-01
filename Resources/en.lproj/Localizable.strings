@@ -131,3 +131,13 @@
 "ctx.stackAdd" = "Add to Paste Stack";
 "ctx.stackRemove" = "Remove from Paste Stack";
 
+"a11y.kind.clip" = "Clip";
+"a11y.kind.note" = "Note";
+"a11y.kind.file" = "File";
+"a11y.from %@" = "from %@";
+"a11y.stack %lld" = "number %lld in the paste stack";
+"a11y.hint.paste" = "Pastes this item";
+"a11y.hint.edit" = "Opens this note for editing";
+"a11y.noteText" = "Note text";
+"a11y.characters %lld" = "%lld characters";
+

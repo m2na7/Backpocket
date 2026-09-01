@@ -131,3 +131,13 @@
 "ctx.stackAdd" = "묶어 붙여넣기에 담기";
 "ctx.stackRemove" = "묶어 붙여넣기에서 빼기";
 
+"a11y.kind.clip" = "클립";
+"a11y.kind.note" = "메모";
+"a11y.kind.file" = "파일";
+"a11y.from %@" = "%@에서 복사";
+"a11y.stack %lld" = "묶어 붙여넣기 %lld번";
+"a11y.hint.paste" = "이 항목을 붙여넣습니다";
+"a11y.hint.edit" = "이 메모를 편집합니다";
+"a11y.noteText" = "메모 내용";
+"a11y.characters %lld" = "%lld자";
+

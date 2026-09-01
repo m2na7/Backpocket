@@ -147,6 +147,12 @@ a bug in this document.
   notes column is grouped by, keyed off `usedAt`.
 - `RowChrome` — small shared row furniture: the pick-order `StackBadge`, the
   `⌘`-slot `ShortcutChip`, and search-match emphasis.
+- `RowVoice` (with the `RowSpeech` modifier) — the sentence VoiceOver reads in
+  place of a row, composed from plain values so the wording and the order can
+  be checked without a view. A row says most of what it is in icons, glyphs
+  and which column it sits in, none of which a screen reader can see; the
+  string lookup is a parameter because the `.lproj` bundles ship inside the
+  built app and a test process has none of them. Defined in `RowChrome`.
 - `PanelMetrics` — the panel's row grid and section sizing constants, shared
   by the first-run window size and the section frames.
 - `PaneChrome` — chrome shared by the panel's two column builders:

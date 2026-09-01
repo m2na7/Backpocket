@@ -437,8 +437,16 @@ struct HistoryPane: View {
                             Text("\(linkRows)")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
+                                // The count belongs to the stepper below,
+                                // which carries it as its value.
+                                .accessibilityHidden(true)
                             Stepper("", value: $linkRows, in: LinkRows.range)
                                 .labelsHidden()
+                                // `labelsHidden` hides it from the screen
+                                // reader too, and a nameless stepper is a
+                                // pair of arrows over nothing.
+                                .accessibilityLabel(Text("settings.linkRows"))
+                                .accessibilityValue(Text("\(linkRows)"))
                         }
                     }
 
@@ -510,12 +518,16 @@ struct IgnorePane: View {
                         .frame(width: 24, height: 20)
                 }
                 .help("settings.ignore.add")
-                Divider().frame(height: 14)
+                // A tooltip is a pointer affordance; the same words have to
+                // be the button's label as well or it announces as "plus".
+                .accessibilityLabel(Text("settings.ignore.add"))
+                Divider().frame(height: 14).accessibilityHidden(true)
                 Button(action: removeSelected) {
                     Image(systemName: "minus")
                         .frame(width: 24, height: 20)
                 }
                 .help("settings.ignore.remove")
+                .accessibilityLabel(Text("settings.ignore.remove"))
                 .disabled(selection == nil)
             }
             .buttonStyle(.borderless)
@@ -677,6 +689,9 @@ struct DataPane: View {
             Text("\(count)")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                // A bare number beside a Delete button is worth saying what
+                // it counts.
+                .accessibilityLabel(Text("footer.items \(count)"))
         }
     }
 

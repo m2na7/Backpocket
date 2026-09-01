@@ -131,3 +131,13 @@
 "ctx.stackAdd" = "加入多项粘贴";
 "ctx.stackRemove" = "移出多项粘贴";
 
+"a11y.kind.clip" = "剪贴项";
+"a11y.kind.note" = "笔记";
+"a11y.kind.file" = "文件";
+"a11y.from %@" = "复制自 %@";
+"a11y.stack %lld" = "多项粘贴第 %lld 项";
+"a11y.hint.paste" = "粘贴此项目";
+"a11y.hint.edit" = "编辑此笔记";
+"a11y.noteText" = "笔记内容";
+"a11y.characters %lld" = "%lld 个字符";
+

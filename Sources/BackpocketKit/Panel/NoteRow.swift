@@ -150,9 +150,32 @@ struct NoteRow: View, @MainActor Equatable {
                 onEdit()
             }
         }
+        .modifier(
+            RowSpeech(
+                voice: voice,
+                selected: highlighted,
+                hint: "a11y.hint.edit",
+                activate: onEdit
+            )
+        )
+        // Edit and delete are drawn only under the pointer, so without these
+        // two the notes column would offer a screen reader no way to reach
+        // either one. Paste is here because ⌘↩ is a note's non-native action
+        // and nothing on the row shows it.
+        .accessibilityActions {
+            Button("ctx.paste", action: onActivate)
+            Button("ctx.edit", action: onEdit)
+            Button(stackNumber == nil ? "ctx.stackAdd" : "ctx.stackRemove", action: onToggleStack)
+            Button(isPinned ? "ctx.unstar" : "ctx.star", action: onTogglePin)
+            Button("ctx.delete", action: onDelete)
+        }
     }
 
     private var preview: Text {
         emphasized(item.preview, matching: query)
+    }
+
+    private var voice: RowVoice {
+        RowVoice(note: item, isPinned: isPinned, stackNumber: stackNumber)
     }
 }
