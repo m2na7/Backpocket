@@ -79,6 +79,12 @@ a bug in this document.
   Settings, since the default argument still names `HistoryLimit`; it exists
   so a test can supply a limit, and so a Settings change lands on the next
   copy rather than the next launch.
+- `DeletionUndo` — the bounded record of what the last few deletes removed, so
+  a mis-hit ⌘⌫ can be taken back. SwiftData has no undelete, so it holds the
+  row's values and `Store.undoDelete()` re-creates the row from them; a bulk
+  delete is one batch and undoes in one step. Owns the retention decision —
+  20 seconds, three deletes deep — which is a privacy bound, not a UX one:
+  anything held here is content the user asked to destroy.
 - `Persistence` — builds the `ModelContainer` at a dedicated path, carrying an
   older store forward through the migration plan (see Cross-cutting concerns).
 - `Schema` — the model's shape history as `VersionedSchema`s, plus the

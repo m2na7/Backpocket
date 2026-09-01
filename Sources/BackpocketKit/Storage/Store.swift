@@ -60,6 +60,20 @@ final class Store: ObservableObject {
     /// in one uninterrupted turn, so no second copy can splice itself in.
     private var captureTail: Task<Void, Never>?
 
+    /// The rows the last few deletes removed. Notes are permanent user data
+    /// and ⌘⌫ is one keystroke away from the selection keys, so a delete has
+    /// to be recoverable — briefly. See `DeletionUndo` for how briefly, and
+    /// why holding it any longer would be the wrong kind of memory.
+    ///
+    /// Only the two `delete` methods record here. Expiry and the history limit
+    /// are the app doing what the user configured, and Clear History is its
+    /// own deliberate act; none of them is the slip this exists to catch.
+    private var undo = DeletionUndo()
+
+    /// Drops the retained rows when their window closes even if the app is
+    /// never touched again.
+    private var undoExpiry: Task<Void, Never>?
+
     init(
         context: ModelContext,
         disposableLimit: @escaping @MainActor () -> Int = { HistoryLimit.current }
@@ -290,6 +304,7 @@ final class Store: ObservableObject {
 
     func delete(_ item: Item) {
         guard isTracked(item) else { return }
+        recordUndo([item])
         context.delete(item)
         items.removeAll { $0 === item }
         save()
@@ -300,8 +315,65 @@ final class Store: ObservableObject {
     func delete(_ doomed: [Item]) {
         let tracked = doomed.filter(isTracked)
         guard !tracked.isEmpty else { return }
+        recordUndo(tracked)
         remove(tracked)
         save()
+    }
+
+    // MARK: Undo
+
+    /// Whether the last delete can still be taken back. Read alongside
+    /// `revision` like everything else the panel derives from the store.
+    var canUndoDelete: Bool {
+        undo.canUndo(asOf: Date())
+    }
+
+    /// Puts the most recent delete back — one call per delete, however many
+    /// rows that delete removed. Returns whether anything was restored, so a
+    /// caller can stay silent instead of claiming an undo that had nothing
+    /// left to give.
+    ///
+    /// The rows come back as new models: the deleted ones are gone from the
+    /// context, and only `Store` may hand out references to live items.
+    @discardableResult
+    func undoDelete() -> Bool {
+        guard let snapshots = undo.takeLatest(asOf: Date()) else { return false }
+
+        let restored = snapshots.map { $0.restored() }
+        restored.forEach(context.insert)
+        items.append(contentsOf: restored)
+        // A restore is the one insertion that does not carry the newest
+        // usedAt, so `insertionIndex` — which assumes the global maximum —
+        // would file a week-old row at the top. Re-sorting is what puts each
+        // one back where it was, as pinning already does.
+        items.sort(by: Self.ordered)
+        // No trimOverflow here on purpose: reclaiming the row the user just
+        // asked for would make undo silently do nothing whenever the history
+        // sits at its cap. The cap is re-applied on the next copy and on
+        // panel open, exactly as it is after the limit is lowered in Settings.
+        return save()
+    }
+
+    private func recordUndo(_ doomed: some Collection<Item>) {
+        undo.record(doomed, at: Date())
+        // The window is enforced lazily on read, which is enough to decide
+        // what may be restored but not enough to stop holding the bytes: an
+        // app nobody touches again would keep the deleted content until quit.
+        // One timer per recorded delete drops it on schedule instead, and
+        // replacing it is safe because the newest batch always outlives the
+        // ones beneath it.
+        undoExpiry?.cancel()
+        undoExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(DeletionUndo.window))
+            guard !Task.isCancelled else { return }
+            self?.forgetExpiredDeletions()
+        }
+    }
+
+    private func forgetExpiredDeletions() {
+        // Views refilter on `revision` alone, so an offered undo going away
+        // has to bump it — and a sweep that dropped nothing must not.
+        if undo.forgetExpired(asOf: Date()) { revision += 1 }
     }
 
     // MARK: Housekeeping
