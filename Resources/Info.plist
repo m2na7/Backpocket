@@ -22,6 +22,12 @@
 	<string>14.0</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Required by the App Store, and harmless in the direct build. A
+	     clipboard manager is a utility; the store rejects a submission with no
+	     category and rejects one whose category does not exist. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+
 	<key>LSUIElement</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

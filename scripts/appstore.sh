@@ -55,7 +55,17 @@ otool -L "$APP/Contents/MacOS/Backpocket" | grep -qi sparkle &&
 codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q app-sandbox ||
   die "the bundle is not sandboxed"
 codesign --verify --deep --strict "$APP" || die "signature did not verify"
-echo "  no Sparkle, profile embedded, sandboxed, signature verifies"
+
+# Three keys the store checks and the direct build never needed. Each one was
+# found the slow way once: upload, wait, read the rejection.
+PLIST="$APP/Contents/Info.plist"
+for key in LSApplicationCategoryType CFBundleIconName; do
+  /usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" >/dev/null 2>&1 ||
+    die "Info.plist has no $key — the store rejects the archive without it"
+done
+[ -f "$APP/Contents/Resources/Assets.car" ] ||
+  die "no compiled asset catalog — the store reads the icon from there, not the .icns"
+echo "  no Sparkle, profile embedded, sandboxed, category and icon present, signature verifies"
 
 step "Packaging the installer"
 PKG="build/Backpocket-$VERSION.pkg"

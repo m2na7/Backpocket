@@ -96,6 +96,24 @@ if [ -f Resources/AppIcon.icns ]; then
   cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 fi
 
+# The store reads the icon from a compiled asset catalog, not from the .icns
+# that serves the Finder — an upload without one is rejected for a missing
+# CFBundleIconName, which actool writes into the plist as it compiles. Only the
+# App Store build needs this; the direct download keeps using AppIcon.icns.
+if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  ASSETS="packaging/Assets.xcassets"
+  [ -d "$ASSETS" ] || { echo "build.sh: no asset catalog at $ASSETS" >&2; exit 1; }
+  xcrun actool "$ASSETS" \
+    --compile "$APP/Contents/Resources" \
+    --app-icon AppIcon \
+    --output-partial-info-plist /tmp/actool.plist \
+    --platform macosx --minimum-deployment-target 14.0 \
+    --output-format human-readable-text >/dev/null
+  ICON_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" /tmp/actool.plist 2>/dev/null || echo AppIcon)"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_NAME" "$APP/Contents/Info.plist" 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_NAME" "$APP/Contents/Info.plist"
+fi
+
 # The App Store build carries the profile that says which team and certificate
 # are allowed to ship this bundle id. Its absence is fatal rather than a
 # warning: an upload without it is rejected after the package is built, and
