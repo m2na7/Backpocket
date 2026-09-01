@@ -19,6 +19,10 @@
 
 Some things are worth keeping even when you don't have time to organize them. Put links, snippets, images, files, and passing thoughts in **Backpocket** for now.
 
+<p align="center">
+  <img src="docs/assets/panel.webp" width="820" alt="The Backpocket panel: clipboard history, links and notes side by side">
+</p>
+
 ## Features
 
 - **Never steals focus.** The panel is non-activating, so your cursor stays where it was. Open it, pick, paste.
