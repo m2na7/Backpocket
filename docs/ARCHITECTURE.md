@@ -142,6 +142,23 @@ a bug in this document.
 - `EditPanel` — the note editor; non-activating like the main panel, but it
   does take key focus, so `AppDelegate` suspends the main panel's auto-hide
   while it is open.
+- `PanelEventMonitors` — the panel's two `NSEvent` local monitors (the ⌘
+  watch, the pointer-travel watch) and their add/remove pairing, which is the
+  part that goes wrong: a monitor installed twice handles every event twice,
+  one never removed outlives the view that closed over it, and one that
+  returned nil would swallow ⌘ for the whole app. Takes the registration as an
+  injected pair so all three are testable without an event loop.
+- `PanelContents` — what the view holds between recomputes: the lists as rows
+  to draw and the same lists as identifiers for the selection. They were five
+  pieces of `@State` kept in step by hand, and one recompute that updates the
+  lists but not the identifiers leaves the selection walking rows the panel is
+  no longer drawing.
+- `PanelKeyboard` (with `PanelKeyPress`, `PanelKeyContext` and `PanelCommand`)
+  — the panel's keyboard as a decision table, over flat scalars rather than
+  the store and the view, so every key and modifier combination can be
+  exercised. The reduction from SwiftUI's `KeyPress` to `PanelKeyPress` sits
+  beside it: `KeyPress` has no public initializer, so which keys the panel
+  claims is stated over the pieces the press was taken apart into.
 - `PanelLists` — pure derivation of what the panel shows (clip/link/note
   partitioning, search filtering, note sectioning) from the store and the
   query, so it is testable without a view. Under `LinkCollection.both` the
