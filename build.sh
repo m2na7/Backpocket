@@ -73,10 +73,19 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Backpocket"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# The App Store build carries no updater, so the keys that configure one are
+# noise at best and a review question at worst. Removed from the copy; the
+# repository's template keeps them for the direct-download build.
+if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  for key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks; do
+    /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
+  done
+fi
+
 # ditto rather than cp: a framework is a tree of symlinks (Versions/Current,
 # the top-level aliases) and copying those as regular files produces a bundle
 # that codesign rejects.
-if [ -d "$BIN_DIR/Sparkle.framework" ]; then
+if [ -d "$BIN_DIR/Sparkle.framework" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then
   mkdir -p "$APP/Contents/Frameworks"
   ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 fi
@@ -135,7 +144,9 @@ fi
 # request to prove the bundle still assembles, and failing that would block
 # every change until the appcast host exists. Those builds get the warning,
 # which is the part that has to be impossible to miss either way.
-if [ "$CONFIG" = "release" ]; then
+# Skipped for the App Store build, which deliberately has no feed: Apple
+# ships those updates.
+if [ "$CONFIG" = "release" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then
   for key in SUFeedURL SUPublicEDKey; do
     value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || true)"
     case "$value" in
@@ -173,7 +184,9 @@ fi
 # BACKPOCKET_SANDBOX=1 signs with Resources/Backpocket.entitlements, for the
 # App Store variant. Off by default: the free build must stay byte-identical,
 # so the unsandboxed path below is the plain `codesign` it always was.
-if [ "${BACKPOCKET_SANDBOX:-0}" = "1" ]; then
+# The App Store requires the sandbox, so BACKPOCKET_MAS implies it rather than
+# asking the caller to remember both.
+if [ "${BACKPOCKET_SANDBOX:-0}" = "1" ] || [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
   codesign --force "${HARDENED[@]}" "${TIMESTAMP[@]}" --sign "$IDENTITY" \
     --entitlements Resources/Backpocket.entitlements "$APP"
   echo "Built $APP ($CONFIG, signed: $IDENTITY, sandboxed)"

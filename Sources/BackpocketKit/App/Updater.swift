@@ -1,6 +1,33 @@
 import OSLog
-import Sparkle
 import SwiftUI
+
+#if BACKPOCKET_MAS
+
+/// The Mac App Store build has no updater: Apple ships those updates, and the
+/// store rejects an app that installs its own. The type stays so the menu and
+/// Settings can go on referring to it, and both hide their update controls
+/// behind `isAvailable` rather than compiling out at every call site.
+@MainActor
+final class Updater: ObservableObject {
+    /// False in this build, and the only thing callers need to ask.
+    static let isAvailable = false
+
+    @Published private(set) var canCheck = false
+
+    func checkForUpdates() {}
+
+    /// Reads as off and refuses to turn on: with no updater there is nothing
+    /// for the preference to govern, and a switch that lies is worse than one
+    /// that is absent.
+    static var checksAutomatically: Bool {
+        get { false }
+        set {}
+    }
+}
+
+#else
+
+import Sparkle
 
 /// The auto-updater, and the app's only unconditional network call.
 ///
@@ -24,6 +51,9 @@ import SwiftUI
 @MainActor
 final class Updater: ObservableObject {
     private let controller: SPUStandardUpdaterController
+
+    /// True in this build; the App Store variant compiles a stub instead.
+    static let isAvailable = true
 
     /// Whether the menu item should be tappable — Sparkle refuses to start a
     /// second check while one is in flight.
@@ -108,3 +138,5 @@ extension SPUUpdater {
         set { UserDefaults.standard.set(newValue, forKey: "SUEnableAutomaticChecks") }
     }
 }
+
+#endif

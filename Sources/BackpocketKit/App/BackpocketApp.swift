@@ -20,10 +20,13 @@ public struct BackpocketApp: App {
             Button("menu.settings") {
                 AppDelegate.shared?.openSettings()
             }
-            Button("menu.checkForUpdates") {
-                updater.checkForUpdates()
+            // Absent in the App Store build, where Apple ships the updates.
+            if Updater.isAvailable {
+                Button("menu.checkForUpdates") {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheck)
             }
-            .disabled(!updater.canCheck)
             Divider()
             Button("menu.quit") {
                 NSApplication.shared.terminate(nil)

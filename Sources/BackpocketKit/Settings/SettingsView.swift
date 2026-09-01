@@ -59,13 +59,15 @@ struct GeneralPane: View {
                 // preference would show the user a switch that changed
                 // nothing. This is also the switch the READMEs promise, so it
                 // has to be the one that actually governs the request.
-                Toggle(
-                    "settings.checkForUpdates",
-                    isOn: Binding(
-                        get: { Updater.checksAutomatically },
-                        set: { Updater.checksAutomatically = $0 }
+                if Updater.isAvailable {
+                    Toggle(
+                        "settings.checkForUpdates",
+                        isOn: Binding(
+                            get: { Updater.checksAutomatically },
+                            set: { Updater.checksAutomatically = $0 }
+                        )
                     )
-                )
+                }
             } footer: {
                 if let launchError = launch.failure {
                     Text(launchError).foregroundStyle(.red)
