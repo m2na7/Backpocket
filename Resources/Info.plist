@@ -25,6 +25,14 @@
 	<!-- Required by the App Store, and harmless in the direct build. A
 	     clipboard manager is a utility; the store rejects a submission with no
 	     category and rejects one whose category does not exist. -->
+	<!-- The App Store asks about export compliance on every upload. The only
+	     cryptography here is HTTPS for the favicon fetch and, in the direct
+	     build, the signature check on an update — both exempt. Answering in
+	     the bundle keeps the question from being answered by hand, differently,
+	     some tired evening. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 
