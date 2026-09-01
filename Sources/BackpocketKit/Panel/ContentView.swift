@@ -43,8 +43,8 @@ struct ContentView: View {
     @State private var hoverState = HoverMachine()
     @State private var dropTargeted = false
     @State private var showsShortcuts = false
-    @State private var flagsMonitor: Any?
-    @State private var mouseMonitor: Any?
+    /// The ⌘ and pointer-travel watches, which own their own registration.
+    @State private var monitors = PanelEventMonitors()
     @State private var trusted = Paster.isTrusted
     /// Bumped on every panel show so both lists rewind to the top.
     @State private var openTick = 0
@@ -97,17 +97,10 @@ struct ContentView: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // Several places read these within one render pass, so computed properties
-    // would re-run the same filter every time. Filter once, only when the
-    // source or the query changes.
-    @State private var clips: [Item] = []
-    @State private var links: [Item] = []
-    @State private var notes: [Item] = []
-    /// The notes bucketed for display; rebuilt with `notes` so row bodies
-    /// never run date math or build formatters.
-    @State private var noteSections: [NoteSection] = []
-    /// The same three lists as identifiers, for the selection to move through.
-    @State private var rows = PaneRows()
+    // Several places read the lists within one render pass, so computed
+    // properties would re-run the same filter every time. Filter once, only
+    // when the source or the query changes.
+    @State private var contents = PanelContents()
 
     /// Hands the highlight to the keyboard: clears any hover and ignores
     /// hover entries until the pointer genuinely moves (see hoverAnchor).
@@ -137,13 +130,7 @@ struct ContentView: View {
     /// hover behaviours the caller inherited. Both are now stated by the
     /// caller, which is the only place that knows what changed underneath.
     private func recomputeLists() {
-        let lists = PanelLists.make(
-            items: store.items, query: query, links: linkCollection)
-        clips = lists.clips
-        links = lists.links
-        notes = lists.notes
-        noteSections = lists.noteSections
-        rows = PaneRows(lists)
+        contents = PanelContents.make(items: store.items, query: query, links: linkCollection)
 
         // Every store mutation lands here via store.revision, so this is where
         // a handful notices that one of its picks is gone.
@@ -163,28 +150,18 @@ struct ContentView: View {
             after: selection.pane, showsLinks: linkCollection.showsLinks, showsNotes: showsNotes)
     }
 
-    private func items(in pane: Pane) -> [Item] {
-        switch pane {
-        case .clips: clips
-        case .links: links
-        case .notes: notes
-        }
-    }
-
     private var focusedItems: [Item] {
-        items(in: selection.pane)
+        contents[selection.pane]
     }
 
     private var selectedItem: Item? {
         focusedItems.first { $0.id == selection.selected }
     }
 
-    /// A new sentence that matches nothing becomes a note with a plain Enter.
-    /// For the history panes "nothing" spans clips AND links — they are one
-    /// history split in two, so a URL search that hits only the links section
-    /// must not turn Enter into note capture the way it did before the split.
+    /// Whether the focused pane has results — see `PanelContents`, which owns
+    /// what counts as one.
     private var hasMatches: Bool {
-        selection.pane == .notes ? !notes.isEmpty : !(clips.isEmpty && links.isEmpty)
+        contents.hasMatches(in: selection.pane)
     }
 
     /// Everything the dispatcher and the footer hints need to know about the
@@ -295,50 +272,32 @@ struct ContentView: View {
             Divider()
             footer
         }
-        // SwiftUI's onModifierKeysChanged needs macOS 15+; watch the flags
-        // directly to avoid raising the deployment target.
         .onAppear {
-            // onAppear can re-fire when the onboarding branch swaps back in;
-            // a second monitor would double-handle every event.
-            guard flagsMonitor == nil else { return }
-            flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-                let held = event.modifierFlags.contains(.command)
-                showsShortcuts = held
-                // Collecting is one ⌘-held gesture, so letting go ends it;
-                // asking for Return after that commits the same intent twice.
-                // Asking the app which window is key, rather than the event
-                // which may carry none, is what keeps a hidden panel's
-                // leftover handful from pasting into Settings.
-                if !held, NSApp.keyWindow is BackpocketPanel, stack.hasText {
-                    pasteStack()
+            monitors.install(
+                commandHeld: { held in
+                    showsShortcuts = held
+                    // Collecting is one ⌘-held gesture, so letting go ends it;
+                    // asking for Return after that commits the same intent
+                    // twice. Asking the app which window is key, rather than
+                    // the event which may carry none, is what keeps a hidden
+                    // panel's leftover handful from pasting into Settings.
+                    if !held, NSApp.keyWindow is BackpocketPanel, stack.hasText {
+                        pasteStack()
+                    }
+                },
+                // The one legitimate lifter of the keyboard's hover hold: real
+                // hardware pointer travel, which layout can never synthesize.
+                // The 12pt distance filters out trackpad palm jitter.
+                pointerMoved: { location in
+                    if let replay = hoverState.pointerMoved(to: location),
+                        let item = store.items.first(where: { $0.id == replay.id })
+                    {
+                        hover(item, in: replay.pane)
+                    }
                 }
-                return event
-            }
-            // The one legitimate lifter of the keyboard's hover hold: real
-            // hardware pointer travel. Requires the panel to accept
-            // mouse-moved events (BackpocketPanel sets that). The 12pt
-            // distance filters out trackpad palm jitter while typing.
-            mouseMonitor = NSEvent.addLocalMonitorForEvents(
-                matching: [.mouseMoved, .leftMouseDragged]
-            ) { event in
-                if let replay = hoverState.pointerMoved(to: NSEvent.mouseLocation),
-                    let item = store.items.first(where: { $0.id == replay.id })
-                {
-                    hover(item, in: replay.pane)
-                }
-                return event
-            }
+            )
         }
-        .onDisappear {
-            if let flagsMonitor {
-                NSEvent.removeMonitor(flagsMonitor)
-            }
-            flagsMonitor = nil
-            if let mouseMonitor {
-                NSEvent.removeMonitor(mouseMonitor)
-            }
-            mouseMonitor = nil
-        }
+        .onDisappear { monitors.teardown() }
         // Dwelling on the same item for a moment shows the detail panel.
         // A changed id cancels the pending task automatically.
         .task(id: dwellTarget?.id) {
@@ -375,7 +334,7 @@ struct ContentView: View {
                     dismissDetail()
                     recomputeLists()
                     selection.queryChanged(
-                        to: rows, hasQuery: !query.isEmpty, visiblePanes: visiblePanes)
+                        to: contents.rows, hasQuery: !query.isEmpty, visiblePanes: visiblePanes)
                 }
 
         }
@@ -458,7 +417,7 @@ struct ContentView: View {
     private func leftColumn(height: CGFloat) -> some View {
         VStack(spacing: 0) {
             column(
-                items: clips,
+                items: contents.clips,
                 pane: .clips,
                 // Driven by the same resolver as the footer chip and the key
                 // handler, so this text can never promise the wrong Enter.
@@ -470,7 +429,7 @@ struct ContentView: View {
             if linkCollection.showsLinks {
                 Divider()
                 column(
-                    items: links,
+                    items: contents.links,
                     pane: .links,
                     emptyKey: "links.empty",
                     header: "links.title",
@@ -494,9 +453,9 @@ struct ContentView: View {
     /// sizes this section, so nothing the user is aiming at moves.
     private func linksSectionHeight(in available: CGFloat) -> CGFloat {
         let desired =
-            links.isEmpty
+            contents.links.isEmpty
             ? PanelMetrics.emptyLinksHeight
-            : PanelMetrics.linksSectionHeight(rows: min(links.count, LinkRows.current))
+            : PanelMetrics.linksSectionHeight(rows: min(contents.links.count, LinkRows.current))
         let ceiling = max(
             available - PanelMetrics.sectionHeader - PanelMetrics.rowPitch - 1,
             PanelMetrics.rowPitch
@@ -559,14 +518,14 @@ struct ContentView: View {
 
     private var notesContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SectionTitle(title: "notes.title", count: notes.count)
+            SectionTitle(title: "notes.title", count: contents.notes.count)
 
-            if notes.isEmpty {
+            if contents.notes.isEmpty {
                 EmptyLine(text: "notes.empty")
             } else {
                 ScrollViewReader { proxy in
                     List {
-                        ForEach(noteSections) { section in
+                        ForEach(contents.noteSections) { section in
                             groupHeader(section.group, count: section.rows.count)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(PanelMetrics.rowInsets)
@@ -609,11 +568,11 @@ struct ContentView: View {
                         guard let target = selection.scrollTarget else { return }
                         proxy.scrollTo(target)
                     }
-                    .onChange(of: notes.first?.id) {
-                        if let first = notes.first?.id { proxy.scrollTo(first) }
+                    .onChange(of: contents.notes.first?.id) {
+                        if let first = contents.notes.first?.id { proxy.scrollTo(first) }
                     }
                     .onChange(of: openTick) {
-                        if let first = notes.first?.id { proxy.scrollTo(first) }
+                        if let first = contents.notes.first?.id { proxy.scrollTo(first) }
                     }
                 }
             }
@@ -625,7 +584,7 @@ struct ContentView: View {
     /// Cmd+1..9 slots act on the focused pane; the numbers must appear there.
     private func noteShortcut(for item: Item) -> Int? {
         guard selection.pane == .notes, showsShortcuts,
-            let index = notes.prefix(9).firstIndex(where: { $0.id == item.id })
+            let index = contents.notes.prefix(9).firstIndex(where: { $0.id == item.id })
         else { return nil }
         return index + 1
     }
@@ -794,47 +753,16 @@ struct ContentView: View {
     // MARK: Key handling
 
     private func handle(_ press: KeyPress) -> KeyPress.Result {
-        perform(PanelKeyboard.command(for: reduce(press), in: keyContext))
-    }
-
-    /// Strips the press down to what the dispatcher decides on.
-    ///
-    /// The shortcut is matched here rather than inside the dispatcher because
-    /// matching consults the live NSEvent for the physical key — and only for
-    /// character keys: a rebindable shortcut is built from an ANSI key name
-    /// or "delete", so it can never be ⇥, esc, ↩ or an arrow, and those
-    /// branches win over shortcuts anyway.
-    private func reduce(_ press: KeyPress) -> PanelKeyPress {
-        // Only `.down` can reach a shortcut, so a held key must not pay for
-        // the lookup: matching reads the live NSEvent and then every binding
-        // out of preferences, and a character key repeating in the search
-        // field is the most latency-sensitive path the panel has. The
-        // dispatcher discards the result on a repeat anyway.
-        let isRepeat = press.phase != .down
-        let key: PanelKeyPress.Key
-        var shortcut: PanelShortcut?
-        if press.key == .upArrow {
-            key = .upArrow
-        } else if press.key == .downArrow {
-            key = .downArrow
-        } else if press.key == .tab {
-            key = .tab
-        } else if press.key == .escape {
-            key = .escape
-        } else if press.key == .return {
-            key = .return
-        } else {
-            key = .character(press.key.character)
-            shortcut = isRepeat ? nil : PanelShortcut.match(press)
-        }
-
-        return PanelKeyPress(
-            key: key,
-            isRepeat: isRepeat,
-            command: press.modifiers.contains(.command),
-            shift: press.modifiers.contains(.shift),
-            shortcut: shortcut
+        // The shortcut is matched here rather than inside the dispatcher
+        // because matching consults the live NSEvent for the physical key,
+        // which is the one part of dispatch that cannot be pure.
+        let reduced = PanelKeyPress(
+            key: press.key,
+            isRepeat: press.phase != .down,
+            modifiers: press.modifiers,
+            matchingShortcut: { PanelShortcut.match(press) }
         )
+        return perform(PanelKeyboard.command(for: reduced, in: keyContext))
     }
 
     /// Carries out the dispatcher's decision. Nothing is decided here: the
@@ -881,7 +809,7 @@ struct ContentView: View {
         // Switching sections is a keyboard gesture; a hover highlight left
         // behind in the previous section would show two active rows at once.
         suppressHover()
-        selection.focus(target, in: rows, origin: .user)
+        selection.focus(target, in: contents.rows, origin: .user)
     }
 
     private func move(_ delta: Int) {
@@ -889,7 +817,7 @@ struct ContentView: View {
         // including the re-entry the scroll is about to fire underneath it.
         // Only once there is somewhere to move: an arrow press in an empty
         // pane must leave the pointer's own highlight alone.
-        if selection.move(delta, in: rows) {
+        if selection.move(delta, in: contents.rows) {
             suppressHover()
         }
     }
@@ -958,7 +886,7 @@ struct ContentView: View {
             hoverState.dropHighlight()
             dismissDetail()
             recomputeLists()
-            selection.selectTopRows(in: rows)
+            selection.selectTopRows(in: contents.rows)
         }
         return converted
     }
@@ -1001,7 +929,7 @@ struct ContentView: View {
         // below is what makes "the one under it" unanswerable. The focused
         // pane is where the target is by construction — hover focuses what it
         // lights, and the keyboard selection is the focused pane's own.
-        selection.deleteAdjusting(target.id, in: selection.pane, rows: rows)
+        selection.deleteAdjusting(target.id, in: selection.pane, rows: contents.rows)
 
         store.delete(target)
         hoverState.dropHighlight()
@@ -1023,10 +951,10 @@ struct ContentView: View {
         stack.clear()
         #if DEBUG
         if let count = DebugLaunch.stackCount {
-            stack.seed(text: clips.filter { !$0.isImage }.prefix(count).map(\.id))
+            stack.seed(text: contents.clips.filter { !$0.isImage }.prefix(count).map(\.id))
         }
         #endif
-        selection.reset(to: rows)
+        selection.reset(to: contents.rows)
         fieldFocused = true
     }
 }
