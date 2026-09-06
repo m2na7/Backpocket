@@ -27,6 +27,8 @@
 "onboarding.body" = "To paste the item you pick, Backpocket needs to press ⌘V for you.";
 "onboarding.openSettings" = "Open System Settings";
 "onboarding.hint" = "Continues automatically once enabled";
+"onboarding.body.manual" = "To paste the item you pick, Backpocket needs to press \u2318V for you. Add it under Accessibility with the + button.";
+"onboarding.hint.manual" = "Continues automatically once added";
 
 "settings.title" = "Settings";
 "settings.tab.general" = "General";

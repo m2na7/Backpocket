@@ -290,7 +290,11 @@ enum LinkClickAction: String, CaseIterable, Identifiable {
 
 /// Whether picking an item pastes into the frontmost app or only copies.
 enum PasteBehavior {
-    static let `default` = true
+    /// On where the app may ask for the Accessibility permission, off where it
+    /// may not. The App Store build cannot ask (see `Paster.mayPrompt`), and a
+    /// feature that silently does nothing until the user finds a System
+    /// Settings pane on their own is worse than one that is plainly off.
+    static let `default` = Paster.mayPrompt
 
     /// When off, content only lands on the clipboard. This is the escape hatch
     /// that keeps the app usable without the Accessibility permission.

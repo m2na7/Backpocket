@@ -27,6 +27,8 @@
 "onboarding.body" = "要粘贴所选内容，Backpocket 需要代替你按下 ⌘V。";
 "onboarding.openSettings" = "打开系统设置";
 "onboarding.hint" = "开启后将自动继续";
+"onboarding.body.manual" = "为了粘贴你选择的内容，Backpocket 需要代你按下 \u2318V。请用 + 按钮将它添加到“辅助功能”列表。";
+"onboarding.hint.manual" = "添加后会自动继续";
 
 "settings.title" = "设置";
 "settings.tab.general" = "通用";

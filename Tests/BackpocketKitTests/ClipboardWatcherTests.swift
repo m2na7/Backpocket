@@ -657,7 +657,10 @@ struct PreferencesTests {
     /// The values themselves, pinned: what a fresh install does is a product
     /// decision, and the test above would happily agree with a changed one.
     @Test func theShippedDefaultsAreWhatTheyHaveAlwaysBeen() {
-        #expect(PasteBehavior.default == true)
+        // The one default that differs by distribution: the App Store build
+        // cannot ask for the Accessibility permission, so it ships with
+        // automatic pasting off rather than on and silently inert.
+        #expect(PasteBehavior.default == Paster.mayPrompt)
         #expect(PreviewBehavior.default == true)
         #expect(NotesVisibility.default == true)
         #expect(FaviconFetching.default == true)

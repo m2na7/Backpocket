@@ -27,6 +27,8 @@
 "onboarding.body" = "選んだ項目を貼り付けるには、Backpocket が ⌘V キーを代わりに押す必要があります。";
 "onboarding.openSettings" = "システム設定を開く";
 "onboarding.hint" = "オンにすると自動的に続行します";
+"onboarding.body.manual" = "選んだ項目を貼り付けるために、Backpocket が代わりに \u2318V を押します。アクセシビリティの一覧に + ボタンで追加してください。";
+"onboarding.hint.manual" = "追加すると自動的に続きます";
 
 "settings.title" = "設定";
 "settings.tab.general" = "一般";

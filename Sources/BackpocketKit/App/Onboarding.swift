@@ -15,7 +15,7 @@ struct Onboarding: View {
             Text("onboarding.title")
                 .font(.headline)
 
-            Text("onboarding.body")
+            Text(Paster.mayPrompt ? "onboarding.body" : "onboarding.body.manual")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -29,7 +29,7 @@ struct Onboarding: View {
             }
             .keyboardShortcut(.defaultAction)
 
-            Text("onboarding.hint")
+            Text(Paster.mayPrompt ? "onboarding.hint" : "onboarding.hint.manual")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }

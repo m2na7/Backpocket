@@ -8,8 +8,25 @@ enum Paster {
         AXIsProcessTrusted()
     }
 
+    /// Whether this build may ask macOS for the Accessibility permission.
+    ///
+    /// The App Store build never asks. Guideline 2.4.5 reserves Accessibility
+    /// for apps that exist to help people with disabilities, and pasting for
+    /// you is not that — so the store copy leaves the decision entirely to the
+    /// user, who turns automatic pasting on in Settings and adds the app in
+    /// System Settings by hand. The direct download, which Apple does not
+    /// review, keeps the prompt.
+    static var mayPrompt: Bool {
+        #if BACKPOCKET_MAS
+        false
+        #else
+        true
+        #endif
+    }
+
     @discardableResult
     static func requestAccessibility() -> Bool {
+        guard mayPrompt else { return isTrusted }
         // Spelled out rather than read from kAXTrustedCheckOptionPrompt: the
         // imported constant is a global var, which no context may read safely.
         return AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
