@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-09-06
+
+### Changed
+- The Mac App Store build no longer asks for the Accessibility permission, and ships with automatic pasting off. App Review reserves Accessibility for apps that exist to help people with disabilities, so that build leaves the choice entirely to you: turn automatic pasting on in Settings and add Backpocket under Accessibility yourself, or leave it off and press `Cmd+V` after picking an item. The direct download is unchanged.
+
 ## [0.1.4] - 2026-09-02
 
 ### Fixed
