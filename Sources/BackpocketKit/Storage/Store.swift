@@ -10,8 +10,9 @@ final class Store: ObservableObject {
     /// Pinned items first, then usedAt descending — see `ordered`. The array
     /// is maintained incrementally rather than refetched: a mutation that
     /// bumps usedAt sets it to Date(), the global maximum, so the item only
-    /// has to move to the front of its own block (`insertionIndex`). Pinning
-    /// is the one change that reorders across blocks, and re-sorts.
+    /// has to move to the front of its own block (`insertionIndex`). Two
+    /// changes re-sort instead: pinning, which moves an item across blocks,
+    /// and `undoDelete`, whose restored rows keep their old usedAt.
     @Published private(set) var items: [Item] = []
 
     /// Bumped on every mutation. Views must refilter on THIS, not on `items`:
@@ -52,8 +53,9 @@ final class Store: ObservableObject {
     /// digesting when either one reached the dedup lookup, so a re-copy of an
     /// image already in flight would miss the row it should have promoted and
     /// land as a second one; and whichever render happened to finish first
-    /// would insert first, which `items` — maintained incrementally, never
-    /// re-sorted — would then keep as the order the user copied in.
+    /// would insert first and take the older usedAt, so the wrong order would
+    /// be stamped into the timestamps themselves, where no re-sort of `items`
+    /// could put back the order the user copied in.
     ///
     /// Chaining onto it is safe because the property is main-actor isolated
     /// like everything else here: the read and the write in `addImage` happen

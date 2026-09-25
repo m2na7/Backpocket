@@ -145,8 +145,9 @@ struct StoreTests {
 
     // The capture chain. Digesting an image suspends, so two copies that arrive
     // before the first has landed are the case where an unserialized path would
-    // quietly get both the order and the dedup wrong — and `items` is never
-    // re-sorted, so a bad insert is permanent.
+    // quietly get both the order and the dedup wrong — and each row's usedAt
+    // is stamped as it is inserted, so a bad insert order is also the sorted
+    // order and no later re-sort would put it right.
 
     @Test func imagesCopiedBackToBackAreRecordedInCopyOrder() async throws {
         // Sizes chosen so the two digests take visibly different times: run

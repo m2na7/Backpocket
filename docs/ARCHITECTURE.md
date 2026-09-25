@@ -271,15 +271,19 @@ a bug in this document.
   source and timestamps. This is the product thesis, not a storage shortcut.
 - **Notes and pinned items never expire.** `Item.isDisposable` is the single
   gate that expiry, history-limit trimming, and Clear History all go through.
-- **`Store.items` is always sorted by `usedAt` descending, maintained
-  incrementally.** Every mutation that bumps `usedAt` sets it to `Date()` —
-  the global maximum — so `promote(_:)` can move that item to the front and
-  the order is preserved without refetching or re-sorting. The guard is
-  `isTracked(_:)`: callers hold `Item` references across time (an open editor
-  outlives its row), and mutating a reference that trimming or expiry already
-  deleted would re-insert the dead model at the front — a ghost row with no
-  backing store that also hijacks `add`'s dedup. Writes through stale
-  references are dropped instead.
+- **`Store.items` is ordered pinned block first, then `usedAt` descending
+  within each block, maintained incrementally.** New rows and every mutation
+  that bumps `usedAt` carry `Date()` — the global maximum — so they land at,
+  or `promote(_:)` moves them to, the front of their own block
+  (`insertionIndex`), with no refetch. Outside `reload()`, which refetches and
+  sorts (at init, and to roll back after a failed save), exactly two mutations
+  re-sort: `togglePin` (the item crosses blocks) and `undoDelete` (restored
+  rows keep their old `usedAt`, so `insertionIndex` would misfile them). The
+  guard is `isTracked(_:)`: callers hold `Item` references across time (an
+  open editor outlives its row), and mutating a reference that trimming or
+  expiry already deleted would re-insert the dead model at the front — a ghost
+  row with no backing store that also hijacks `add`'s dedup. Writes through
+  stale references are dropped instead.
 - **Panels never activate the app.** `BackpocketPanel`, `DetailPanel`, and
   `EditPanel` are all non-activating; focus never leaves the paste target.
   `SettingsWindow` is the sole, deliberate exception.
