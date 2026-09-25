@@ -14,6 +14,8 @@
 #     (xcrun notarytool store-credentials backpocket --apple-id … --team-id …)
 #   - the Sparkle signing key in the login keychain
 #   - gh authenticated as the account owning the repository
+#   - push access to the Homebrew tap
+#   - wrangler logged in, when notes/appcast-site is here to deploy the feed
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -66,11 +68,35 @@ xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 ||
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
 REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 
-# Checked now because both are written to at the very end, long after the
-# expensive part. A tap that cannot be pushed is worth knowing about before
-# notarization, not after.
-gh repo view "$TAP_REPO" >/dev/null 2>&1 || die "cannot reach the tap $TAP_REPO"
+# A version that is already tagged or released means an earlier run got
+# partway through publishing. Running again would rebuild and re-notarize
+# only to stop at `git tag`; that release is finished or undone by hand.
+git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null &&
+  die "tag v$VERSION already exists here — finish that release by hand, or delete the tag"
+git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1 &&
+  die "tag v$VERSION is already on origin — finish that release by hand"
+gh release view "v$VERSION" >/dev/null 2>&1 &&
+  die "a GitHub release for v$VERSION already exists"
+
+# Checked now because the tap and the feed are written to at the very end,
+# long after the expensive part. The tap is public, so being able to see it
+# proves nothing; what the end of the run needs is the right to push to it.
+[ "$(gh api "repos/$TAP_REPO" --jq .permissions.push 2>/dev/null)" = true ] ||
+  die "cannot push to the tap $TAP_REPO"
 [ -n "$FEED_URL" ] || die "Resources/Info.plist has no SUFeedURL"
+
+# The feed is deployed from a site kept outside the repository. Without it
+# the release still goes out and the appcast is uploaded by hand, which is
+# better heard now than after the build. With it, wrangler has to be logged
+# in: `whoami --json` exits non-zero when it is not, where plain `whoami`
+# only says so and exits 0.
+SITE=notes/appcast-site
+if [ -d "$SITE/public" ]; then
+  (cd "$SITE" && npx --yes wrangler whoami --json >/dev/null 2>&1) ||
+    die "wrangler is not logged in, or would not run — see 'npx wrangler whoami' in $SITE"
+else
+  echo "release.sh: $SITE is missing — build/appcast.xml will need uploading by hand" >&2
+fi
 
 # The release body comes from CHANGELOG.md, so a missing entry is a
 # missing release note. Caught here rather than at publish time, when
@@ -182,7 +208,6 @@ git -C "$TAP_DIR" push -q origin HEAD
 # Sparkle only learns a release exists when this file is served. Deploying it
 # is what turns a published release into one that reaches installed copies.
 step "Deploying the appcast"
-SITE=notes/appcast-site
 if [ -d "$SITE/public" ]; then
   cp build/appcast.xml "$SITE/public/appcast.xml"
   (cd "$SITE" && npx --yes wrangler deploy) || die "wrangler deploy failed"
