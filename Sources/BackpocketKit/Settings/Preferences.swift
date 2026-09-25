@@ -335,12 +335,6 @@ enum IgnoredApps {
         set { PreferenceStore.defaults.set(newValue, forKey: PreferenceKey.ignoredApps) }
     }
 
-    /// Removes the key rather than storing an empty array, so a reset leaves
-    /// the preference absent exactly as a fresh install has it.
-    static func reset() {
-        PreferenceStore.defaults.removeObject(forKey: PreferenceKey.ignoredApps)
-    }
-
     static func contains(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
         return bundleIDs.contains(bundleID)
