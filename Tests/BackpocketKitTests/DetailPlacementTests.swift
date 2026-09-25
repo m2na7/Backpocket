@@ -362,3 +362,83 @@ struct DetailContentSizingTests {
                 == NSHostingView(rootView: prose.measured).fittingSize)
     }
 }
+
+/// Whether the card still describes a row, which decides whether it gets a
+/// grace period at all. Each case holds its own strong reference to the item
+/// throughout — the situation the check exists for, since a card whose item
+/// had simply been freed was already closed by its weak reference.
+@MainActor
+@Suite("DetailPanel liveness")
+struct DetailPanelLivenessTests {
+    private let store: Store
+    private let container: ModelContainer
+
+    init() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        container = try ModelContainer(for: Item.self, configurations: configuration)
+        store = Store(context: ModelContext(container), disposableLimit: { 1 })
+    }
+
+    @Test func nothingShownIsNotLive() {
+        #expect(!DetailPanel.isLive(nil))
+    }
+
+    /// Store never hands one out, but a model no context owns is not a row.
+    @Test func anItemNoStoreOwnsIsNotLive() {
+        #expect(!DetailPanel.isLive(Item(content: "loose")))
+    }
+
+    /// The reported case: ⌘⌫ with the pointer on the card. `Store.delete`
+    /// saves before the card is asked, and SwiftData clears `isDeleted` on
+    /// save, so a check on that flag alone kept the card up over the row.
+    @Test func aDeletedItemStopsBeingLiveOnceTheDeleteIsSaved() throws {
+        store.addNote("a note the card is showing")
+        let item = try #require(store.items.first)
+        #expect(DetailPanel.isLive(item))
+
+        store.delete(item)
+
+        #expect(!DetailPanel.isLive(item))
+    }
+
+    /// The half the flag still covers. Between a delete and its save the
+    /// model keeps its context, so only `isDeleted` says it is leaving.
+    /// `Store` always saves at once, so this goes straight to a context.
+    @Test func aDeleteNotYetSavedIsNotLive() throws {
+        let context = ModelContext(container)
+        let item = Item(content: "deleted, not yet saved")
+        context.insert(item)
+        try context.save()
+        #expect(DetailPanel.isLive(item))
+
+        context.delete(item)
+
+        #expect(item.modelContext != nil)
+        #expect(!DetailPanel.isLive(item))
+    }
+
+    /// An undone delete comes back as a new model, and that one is a row.
+    @Test func theRowAnUndoPutsBackIsLive() throws {
+        store.addNote("deleted, then restored")
+        store.delete(try #require(store.items.first))
+        #expect(store.undoDelete())
+
+        let restored = try #require(store.items.first)
+        #expect(DetailPanel.isLive(restored))
+    }
+
+    /// Trimming is a delete the user never asked for, and the card must
+    /// treat it like one.
+    @Test func arowTrimmedPastTheCapIsNotLive() throws {
+        let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
+        store.add("older", source: source)
+        let older = try #require(store.items.first)
+        // The cap is one, so the next copy trims the first.
+        store.add("newer", source: source)
+        #expect(!store.items.contains { $0 === older })
+
+        #expect(!DetailPanel.isLive(older))
+        let newer = try #require(store.items.first)
+        #expect(DetailPanel.isLive(newer))
+    }
+}
