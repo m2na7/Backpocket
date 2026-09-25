@@ -19,6 +19,14 @@
 set -e
 cd "$(dirname "$0")"
 
+# Intermediate files — actool's partial plist, the decoded provisioning
+# profile, the store entitlements — go in a directory this run owns. Fixed
+# names in /tmp are shared by every build on the machine, so two store builds
+# from different checkouts could sign with each other's entitlements, and the
+# decoded profile would outlive the build.
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
 CONFIG="${1:-debug}"
 APP="build/Backpocket.app"
 IDENTITY="${BACKPOCKET_SIGN_IDENTITY:-}"
@@ -117,10 +125,10 @@ if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
   xcrun actool "$ASSETS" \
     --compile "$APP/Contents/Resources" \
     --app-icon AppIcon \
-    --output-partial-info-plist /tmp/actool.plist \
+    --output-partial-info-plist "$WORK/actool.plist" \
     --platform macosx --minimum-deployment-target 14.0 \
     --output-format human-readable-text >/dev/null
-  ICON_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" /tmp/actool.plist 2>/dev/null || echo AppIcon)"
+  ICON_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$WORK/actool.plist" 2>/dev/null || echo AppIcon)"
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_NAME" "$APP/Contents/Info.plist" 2>/dev/null ||
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_NAME" "$APP/Contents/Info.plist"
 fi
@@ -143,15 +151,15 @@ if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
   # upload is refused for the mismatch. Both values are read from the profile
   # rather than written down here, so they cannot drift from the one Apple
   # issued.
-  security cms -D -i "$PROFILE_SRC" > /tmp/bp_profile.plist 2>/dev/null
+  security cms -D -i "$PROFILE_SRC" > "$WORK/profile.plist" 2>/dev/null
   APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
-    "Print :Entitlements:com.apple.application-identifier" /tmp/bp_profile.plist 2>/dev/null ||
-    /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /tmp/bp_profile.plist)"
+    "Print :Entitlements:com.apple.application-identifier" "$WORK/profile.plist" 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$WORK/profile.plist")"
   TEAM_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
-    "Print :Entitlements:com.apple.developer.team-identifier" /tmp/bp_profile.plist 2>/dev/null ||
+    "Print :Entitlements:com.apple.developer.team-identifier" "$WORK/profile.plist" 2>/dev/null ||
     echo "${APP_IDENTIFIER%%.*}")"
 
-  MAS_ENTITLEMENTS=/tmp/bp_mas.entitlements
+  MAS_ENTITLEMENTS="$WORK/mas.entitlements"
   cp Resources/Backpocket.entitlements "$MAS_ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $APP_IDENTIFIER" "$MAS_ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_IDENTIFIER" "$MAS_ENTITLEMENTS"
