@@ -10,32 +10,13 @@ struct ClipboardWatcherTests {
         NSPasteboard(name: NSPasteboard.Name("backpocket-test-" + UUID().uuidString))
     }
 
-    /// Real encoded bytes, not a stub: the watcher hands the data through
-    /// verbatim, so tests compare against exactly what was written.
-    private static func pngData(width: Int = 3, height: Int = 2) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: width,
-                pixelsHigh: height,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
-        return try #require(bitmap.representation(using: .png, properties: [:]))
-    }
-
     @Test func fileCopyIsRecordedAsPathsNotTheFileName() throws {
         let pasteboard = Self.makePasteboard()
         defer { pasteboard.releaseGlobally() }
 
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")
-        try Self.pngData().write(to: file)
+        try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
         let watcher = ClipboardWatcher(
@@ -67,8 +48,8 @@ struct ClipboardWatcherTests {
             .appending(path: "backpocket-a-\(UUID().uuidString).png")
         let second = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-b-\(UUID().uuidString).png")
-        try Self.pngData().write(to: first)
-        try Self.pngData().write(to: second)
+        try Fixture.png(width: 3, height: 2).write(to: first)
+        try Fixture.png(width: 3, height: 2).write(to: second)
         defer {
             try? FileManager.default.removeItem(at: first)
             try? FileManager.default.removeItem(at: second)
@@ -107,7 +88,7 @@ struct ClipboardWatcherTests {
         // the content.
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")
-        try Self.pngData().write(to: file)
+        try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
         let typed = Item(content: file.path)
@@ -121,7 +102,7 @@ struct ClipboardWatcherTests {
     @Test func notesAndImagesAreNeverFileCopies() throws {
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")
-        try Self.pngData().write(to: file)
+        try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
         // A clip converted to a note keeps its content; pasting it as a file
@@ -304,7 +285,7 @@ struct ClipboardWatcherTests {
         var copies: [CopiedContent] = []
         watcher.onCopy = { content, _ in copies.append(content) }
 
-        let png = try Self.pngData()
+        let png = try Fixture.png(width: 3, height: 2)
         pasteboard.clearContents()
         pasteboard.setData(png, forType: .png)
         watcher.poll()
@@ -380,7 +361,7 @@ struct ClipboardWatcherTests {
         // Copying an image file in Finder puts the file URL and bitmap
         // renditions on the pasteboard together; the path must win.
         pasteboard.declareTypes([.fileURL, .png, .string], owner: nil)
-        pasteboard.setData(try Self.pngData(), forType: .png)
+        pasteboard.setData(try Fixture.png(width: 3, height: 2), forType: .png)
         pasteboard.setString("/tmp/picture.png", forType: .string)
         watcher.poll()
 
@@ -406,7 +387,7 @@ struct ClipboardWatcherTests {
         // the cell text; the searchable text must win.
         pasteboard.declareTypes([.string, .png], owner: nil)
         pasteboard.setString("Q1\t1200\nQ2\t1350", forType: .string)
-        pasteboard.setData(try Self.pngData(), forType: .png)
+        pasteboard.setData(try Fixture.png(width: 3, height: 2), forType: .png)
         watcher.poll()
 
         #expect(copies.count == 1)
@@ -429,7 +410,7 @@ struct ClipboardWatcherTests {
 
         // A browser image copy ships the bitmap with the image's URL as its
         // only text; the bitmap is what the user meant to copy.
-        let png = try Self.pngData()
+        let png = try Fixture.png(width: 3, height: 2)
         pasteboard.declareTypes([.string, .png], owner: nil)
         pasteboard.setString("https://example.com/pic.png", forType: .string)
         pasteboard.setData(png, forType: .png)
@@ -552,7 +533,7 @@ struct ClipboardWatcherTests {
     @Test func aFileCopyIsCapturedAsAFileCopyAndPlainTextIsNot() throws {
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")
-        try Self.pngData().write(to: file)
+        try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
         func capture(_ write: (NSPasteboard) -> Void) -> CopySource? {

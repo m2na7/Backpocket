@@ -47,22 +47,10 @@ private actor NetworkLog {
 }
 
 /// Real encoded bytes: a stub blob is rejected by the decode guard, so it
-/// would keep passing with the size cap deleted.
+/// would keep passing with the size cap deleted. Uncompressed, which is what
+/// lets a 400-pixel square stand for a body past that cap.
 private func tiffData(side: Int) throws -> Data {
-    let bitmap = try #require(
-        NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: side,
-            pixelsHigh: side,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ))
-    return try #require(bitmap.tiffRepresentation)
+    try #require(Fixture.bitmap(width: side, height: side).tiffRepresentation)
 }
 
 @Suite struct FaviconsTests {

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -40,25 +39,6 @@ struct StoreTests {
     /// desync between the published array and the database cannot hide.
     private func persistedContents() throws -> [String] {
         try ModelContext(container).fetch(FetchDescriptor<Item>()).map(\.content)
-    }
-
-    /// Real encoded bytes: addImage reads dimensions from the data, so a
-    /// stub blob would be rejected as undecodable.
-    private func pngData(width: Int, height: Int) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: width,
-                pixelsHigh: height,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
-        return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 
     /// `addImage` returns before the row exists — the digest runs off the main
@@ -108,7 +88,7 @@ struct StoreTests {
     }
 
     @Test func addImageStoresDimensionsHashAndThumbnail() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
 
         let image = try #require(store.items.first)
         #expect(image.isImage)
@@ -118,7 +98,7 @@ struct StoreTests {
     }
 
     @Test func addingIdenticalImageMovesExistingToTopWithoutDuplicating() async throws {
-        let png = try pngData(width: 4, height: 3)
+        let png = try Fixture.png(width: 4, height: 3)
         await addImage(png, from: CopySource(name: "Alpha", bundleID: "dev.test.alpha"))
         let original = try #require(store.items.first)
         original.usedAt = Date(timeIntervalSinceNow: -100)
@@ -136,8 +116,8 @@ struct StoreTests {
     }
 
     @Test func addImageWithDifferentDataCreatesSecondItem() async throws {
-        await addImage(try pngData(width: 4, height: 3))
-        await addImage(try pngData(width: 5, height: 5))
+        await addImage(try Fixture.png(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 5, height: 5))
 
         #expect(store.items.count == 2)
         #expect(store.items.allSatisfy { $0.isImage })
@@ -153,8 +133,8 @@ struct StoreTests {
         // Sizes chosen so the two digests take visibly different times: run
         // concurrently, the small one finishes first and the big one lands on
         // top of it, which is the reverse of what the user copied.
-        let big = try pngData(width: 900, height: 900)
-        let small = try pngData(width: 4, height: 3)
+        let big = try Fixture.png(width: 900, height: 900)
+        let small = try Fixture.png(width: 4, height: 3)
 
         store.addImage(big, source: source)
         store.addImage(small, source: source)
@@ -164,7 +144,7 @@ struct StoreTests {
     }
 
     @Test func recopyingAnImageStillBeingDigestedDoesNotDuplicateIt() async throws {
-        let png = try pngData(width: 4, height: 3)
+        let png = try Fixture.png(width: 4, height: 3)
 
         store.addImage(png, source: CopySource(name: "Alpha", bundleID: "dev.test.alpha"))
         store.addImage(png, source: CopySource(name: "Beta", bundleID: "dev.test.beta"))
@@ -211,7 +191,7 @@ struct StoreTests {
     }
 
     @Test func convertToNoteIsNoOpOnImages() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
         let image = try #require(store.items.first)
         let aged = Date(timeIntervalSinceNow: -86_400)
         image.usedAt = aged
@@ -283,7 +263,7 @@ struct StoreTests {
     @Test func anImageRefusesAContentEdit() async throws {
         // An image's content is a derived placeholder, so the editor must be
         // told the write did not happen rather than closing as if it had.
-        await addImage(try pngData(width: 4, height: 4))
+        await addImage(try Fixture.png(width: 4, height: 4))
         let image = try #require(store.items.first { $0.isImage })
 
         #expect(store.update(image, content: "typed over the placeholder") == false)
@@ -441,7 +421,7 @@ struct StoreTests {
     @Test func imageItemsParticipateInTrimOverflow() async throws {
         // Recorded before the cap is lowered rather than inside the block: the
         // capture has to be awaited, and one image is under every limit anyway.
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
 
         try withHistoryLimit(10) {
             let image = try #require(store.items.first)
@@ -550,7 +530,7 @@ struct StoreTests {
     }
 
     @Test func adoptAsNoteFilesANoteWhenTextMatchesAnImagePlaceholder() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
         let placeholder = try #require(store.items.first?.content)
 
         // Dropping text that happens to equal the placeholder must file a
@@ -562,7 +542,7 @@ struct StoreTests {
     }
 
     @Test func updateOnImageItemIsIgnored() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
         let image = try #require(store.items.first)
         let placeholder = image.content
 

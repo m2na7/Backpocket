@@ -329,12 +329,7 @@ struct DetailContentSizingTests {
     /// An image already smaller than the cap is handed through untouched —
     /// upscaling a small clip to the card's pixel budget would only blur it.
     @Test func animageBelowTheCapIsLeftAlone() throws {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 120, pixelsHigh: 90,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let data = try Fixture.png(width: 120, height: 90)
 
         let capped = try #require(DetailPanel.cardImage(from: data, pixels: 1_680))
         #expect(capped.size == NSSize(width: 120, height: 90))

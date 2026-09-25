@@ -52,19 +52,7 @@ struct ImageBytesTests {
     /// the point where SwiftData moves a blob out of the row, which is the
     /// path the app's real screenshots take.
     private func noisePNG(side: Int = 320, seed: UInt32 = 1) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: side,
-                pixelsHigh: side,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
+        let bitmap = try Fixture.bitmap(width: side, height: side)
         let pixels = try #require(bitmap.bitmapData)
         var state = seed
         for index in 0..<(bitmap.bytesPerRow * side) {
