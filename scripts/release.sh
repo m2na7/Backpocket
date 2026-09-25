@@ -4,9 +4,11 @@
 #
 #   ./scripts/release.sh 0.1.0
 #
-# CI could do this, and release.yml still can — but macOS runners bill ten
-# minutes for every one on a private repository, so until this repo is public
-# the local path is the cheap one. It produces the same artifacts.
+# Cut here rather than in CI because the signing identity, the notarization
+# credentials and the Sparkle key live in this keychain, not in the
+# repository's secrets. release.yml can still build a release when dispatched
+# by hand, but it neither bumps the Homebrew cask nor deploys the feed, so
+# after one of its releases both are left to do by hand.
 #
 # Prerequisites, each checked below rather than assumed:
 #   - a "Developer ID Application" identity in the keychain
