@@ -6,40 +6,45 @@ import Testing
 @MainActor
 @Suite("ClipboardWatcher")
 struct ClipboardWatcherTests {
-    private static func makePasteboard() -> NSPasteboard {
-        NSPasteboard(name: NSPasteboard.Name("backpocket-test-" + UUID().uuidString))
+    private static let finder = CopySource(name: "Finder", bundleID: "com.apple.finder")
+
+    /// What one poll reports for whatever `write` puts on a private
+    /// pasteboard, attributed to `source`. Most tests here are exactly that —
+    /// clear, write, poll once, look at what came out — so they share it; the
+    /// ones that need the watcher between two steps build their own.
+    private func captures(
+        from source: CopySource = CopySource(name: nil, bundleID: nil),
+        _ write: (NSPasteboard) throws -> Void
+    ) rethrows -> [(content: CopiedContent, source: CopySource)] {
+        try withPrivatePasteboard { pasteboard in
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            var copies: [(content: CopiedContent, source: CopySource)] = []
+            watcher.onCopy = { content, source in copies.append((content, source)) }
+
+            pasteboard.clearContents()
+            try write(pasteboard)
+            watcher.poll()
+            return copies
+        }
     }
 
     @Test func fileCopyIsRecordedAsPathsNotTheFileName() throws {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")
         try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
-        let watcher = ClipboardWatcher(
-            pasteboard: pasteboard,
-            frontmostApplication: { CopySource(name: "Finder", bundleID: "com.apple.finder") }
-        )
-        var recorded: String?
-        watcher.onCopy = { content, _ in
-            guard case .text(let string, _, _) = content else { return }
-            recorded = string
-        }
-
         // Exactly what Finder puts on: the file URL, plus the display NAME as
         // text. Recording that name would paste a bare title where the file
         // belongs — the paths must win.
-        pasteboard.clearContents()
-        pasteboard.writeObjects([file as NSURL])
-        pasteboard.setString(file.deletingPathExtension().lastPathComponent, forType: .string)
-        watcher.poll()
+        let copies = captures(from: Self.finder) { pasteboard in
+            pasteboard.writeObjects([file as NSURL])
+            pasteboard.setString(file.deletingPathExtension().lastPathComponent, forType: .string)
+        }
 
-        #expect(recorded == file.path)
+        #expect(copies.map(\.content.string) == [file.path])
 
-        let item = Item(content: try #require(recorded), isFileCopy: true)
+        let item = Item(content: try #require(copies.first?.content.string), isFileCopy: true)
         #expect(item.fileURLs.map(\.path) == [file.path])
     }
 
@@ -115,141 +120,89 @@ struct ClipboardWatcherTests {
     }
 
     @Test func pollReportsCopiedStringWithInjectedSource() {
-        let pasteboard = Self.makePasteboard()
-        // Named pasteboards live in the pasteboard server beyond the process;
-        // release so repeated test runs don't accumulate them.
-        defer { pasteboard.releaseGlobally() }
-
         let source = CopySource(name: "Test App", bundleID: "dev.backpocket.test.source")
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
 
-        var copies: [(string: String, source: CopySource)] = []
-        watcher.onCopy = { content, source in
-            guard case .text(let string, _, _) = content else { return }
-            copies.append((string: string, source: source))
-        }
+        let copies = captures(from: source) { $0.setString("hello", forType: .string) }
 
-        pasteboard.clearContents()
-        pasteboard.setString("hello", forType: .string)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        #expect(copies.first?.string == "hello")
+        #expect(copies.map(\.content.string) == ["hello"])
         #expect(copies.first?.source.name == "Test App")
         #expect(copies.first?.source.bundleID == "dev.backpocket.test.source")
     }
 
     @Test func pollWithUnchangedChangeCountDoesNotFireTwice() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        withPrivatePasteboard { pasteboard in
+            let source = CopySource(name: nil, bundleID: nil)
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            var copyCount = 0
+            watcher.onCopy = { _, _ in copyCount += 1 }
 
-        var copyCount = 0
-        watcher.onCopy = { _, _ in copyCount += 1 }
+            pasteboard.clearContents()
+            pasteboard.setString("once", forType: .string)
+            watcher.poll()
+            watcher.poll()
 
-        pasteboard.clearContents()
-        pasteboard.setString("once", forType: .string)
-        watcher.poll()
-        watcher.poll()
-
-        #expect(copyCount == 1)
+            #expect(copyCount == 1)
+        }
     }
 
     @Test func skipCurrentChangeMutesOwnWriteButNotSubsequentCopy() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        withPrivatePasteboard { pasteboard in
+            let source = CopySource(name: nil, bundleID: nil)
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            var copies: [String] = []
+            watcher.onCopy = { content, _ in
+                guard case .text(let string, _, _) = content else { return }
+                copies.append(string)
+            }
 
-        var copies: [String] = []
-        watcher.onCopy = { content, _ in
-            guard case .text(let string, _, _) = content else { return }
-            copies.append(string)
+            pasteboard.clearContents()
+            pasteboard.setString("own paste", forType: .string)
+            watcher.skipCurrentChange()
+            watcher.poll()
+
+            #expect(copies.isEmpty)
+
+            pasteboard.clearContents()
+            pasteboard.setString("genuine copy", forType: .string)
+            watcher.poll()
+
+            #expect(copies == ["genuine copy"])
         }
-
-        pasteboard.clearContents()
-        pasteboard.setString("own paste", forType: .string)
-        watcher.skipCurrentChange()
-        watcher.poll()
-
-        #expect(copies.isEmpty)
-
-        pasteboard.clearContents()
-        pasteboard.setString("genuine copy", forType: .string)
-        watcher.poll()
-
-        #expect(copies == ["genuine copy"])
     }
 
     @Test func concealedItemIsNotReported() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.string, ClipboardWatcher.concealedType], owner: nil)
+            pasteboard.setString("secret", forType: .string)
+        }
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copyCount = 0
-        watcher.onCopy = { _, _ in copyCount += 1 }
-
-        pasteboard.declareTypes([.string, ClipboardWatcher.concealedType], owner: nil)
-        pasteboard.setString("secret", forType: .string)
-        watcher.poll()
-
-        #expect(copyCount == 0)
+        #expect(copies.isEmpty)
     }
 
     @Test func transientItemIsNotReported() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.string, ClipboardWatcher.transientType], owner: nil)
+            pasteboard.setString("transient", forType: .string)
+        }
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copyCount = 0
-        watcher.onCopy = { _, _ in copyCount += 1 }
-
-        pasteboard.declareTypes([.string, ClipboardWatcher.transientType], owner: nil)
-        pasteboard.setString("transient", forType: .string)
-        watcher.poll()
-
-        #expect(copyCount == 0)
+        #expect(copies.isEmpty)
     }
 
     @Test func autoGeneratedItemIsNotReported() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.string, ClipboardWatcher.autoGeneratedType], owner: nil)
+            pasteboard.setString("generated", forType: .string)
+        }
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copyCount = 0
-        watcher.onCopy = { _, _ in copyCount += 1 }
-
-        pasteboard.declareTypes([.string, ClipboardWatcher.autoGeneratedType], owner: nil)
-        pasteboard.setString("generated", forType: .string)
-        watcher.poll()
-
-        #expect(copyCount == 0)
+        #expect(copies.isEmpty)
     }
 
     @Test func whitespaceOnlyStringIsNotReported() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let copies = captures { $0.setString("  \n\t  ", forType: .string) }
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copyCount = 0
-        watcher.onCopy = { _, _ in copyCount += 1 }
-
-        pasteboard.clearContents()
-        pasteboard.setString("  \n\t  ", forType: .string)
-        watcher.poll()
-
-        #expect(copyCount == 0)
+        #expect(copies.isEmpty)
     }
 
     @Test func sourceInIgnoredAppsIsNotReported() throws {
@@ -258,69 +211,32 @@ struct ClipboardWatcherTests {
         try withScratchPreferences { defaults in
             defaults.set([bundleID], forKey: PreferenceKey.ignoredApps)
 
-            let pasteboard = Self.makePasteboard()
-            defer { pasteboard.releaseGlobally() }
-
             let source = CopySource(name: "Ignored App", bundleID: bundleID)
-            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            let copies = captures(from: source) {
+                $0.setString("should not surface", forType: .string)
+            }
 
-            var copyCount = 0
-            watcher.onCopy = { _, _ in copyCount += 1 }
-
-            pasteboard.clearContents()
-            pasteboard.setString("should not surface", forType: .string)
-            watcher.poll()
-
-            #expect(copyCount == 0)
+            #expect(copies.isEmpty)
         }
     }
 
     @Test func pngOnPasteboardIsReportedAsImage() throws {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
-
         let png = try Fixture.png(width: 3, height: 2)
-        pasteboard.clearContents()
-        pasteboard.setData(png, forType: .png)
-        watcher.poll()
 
-        #expect(copies.count == 1)
-        guard case .image(let data) = copies.first else {
-            Issue.record("expected an image payload")
-            return
-        }
-        #expect(data == png)
+        let copies = captures { $0.setData(png, forType: .png) }
+
+        #expect(copies.map(\.content.image) == [png])
     }
 
     @Test func oversizedImageFallsThroughToStringFlavor() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
-
         // The size gate reads only the byte count, so zero-filled data
         // stands in for a >10MB image without the cost of encoding one.
-        pasteboard.clearContents()
-        pasteboard.setData(Data(count: 10_000_001), forType: .png)
-        pasteboard.setString("textual fallback", forType: .string)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        guard case .text(let string, _, _) = copies.first else {
-            Issue.record("expected the text fallback")
-            return
+        let copies = captures { pasteboard in
+            pasteboard.setData(Data(count: 10_000_001), forType: .png)
+            pasteboard.setString("textual fallback", forType: .string)
         }
-        #expect(string == "textual fallback")
+
+        #expect(copies.map(\.content.string) == ["textual fallback"])
     }
 
     /// The other side of that gate. Only the pair pins it: a test that
@@ -328,206 +244,131 @@ struct ClipboardWatcherTests {
     /// inclusive limit that quietly turned exclusive would drop the largest
     /// screenshots a user can copy while leaving every small one working.
     @Test func animageMeasuringExactlyTheCapIsStillRecorded() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let copies = captures { $0.setData(Data(count: 10_000_000), forType: .png) }
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
-
-        pasteboard.clearContents()
-        pasteboard.setData(Data(count: 10_000_000), forType: .png)
-        watcher.poll()
-
-        guard case .image(let data) = copies.first else {
-            Issue.record("expected the image at the cap to be recorded")
-            return
-        }
-        #expect(data.count == 10_000_000)
+        #expect(copies.map(\.content.image?.count) == [10_000_000])
     }
 
     @Test func fileCopyWithImageFlavorsIsReportedAsText() throws {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
+        let png = try Fixture.png(width: 3, height: 2)
 
         // Copying an image file in Finder puts the file URL and bitmap
         // renditions on the pasteboard together; the path must win.
-        pasteboard.declareTypes([.fileURL, .png, .string], owner: nil)
-        pasteboard.setData(try Fixture.png(width: 3, height: 2), forType: .png)
-        pasteboard.setString("/tmp/picture.png", forType: .string)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        guard case .text(let string, _, _) = copies.first else {
-            Issue.record("expected the file path as text")
-            return
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.fileURL, .png, .string], owner: nil)
+            pasteboard.setData(png, forType: .png)
+            pasteboard.setString("/tmp/picture.png", forType: .string)
         }
-        #expect(string == "/tmp/picture.png")
+
+        #expect(copies.map(\.content.string) == ["/tmp/picture.png"])
     }
 
     @Test func textBesideImageRenditionIsReportedAsText() throws {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
+        let png = try Fixture.png(width: 3, height: 2)
 
         // Excel-style copies carry a bitmap rendition of the selection beside
         // the cell text; the searchable text must win.
-        pasteboard.declareTypes([.string, .png], owner: nil)
-        pasteboard.setString("Q1\t1200\nQ2\t1350", forType: .string)
-        pasteboard.setData(try Fixture.png(width: 3, height: 2), forType: .png)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        guard case .text(let string, _, _) = copies.first else {
-            Issue.record("expected the cell text")
-            return
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.string, .png], owner: nil)
+            pasteboard.setString("Q1\t1200\nQ2\t1350", forType: .string)
+            pasteboard.setData(png, forType: .png)
         }
-        #expect(string == "Q1\t1200\nQ2\t1350")
+
+        #expect(copies.map(\.content.string) == ["Q1\t1200\nQ2\t1350"])
     }
 
     @Test func loneURLBesideImageIsReportedAsImage() throws {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [CopiedContent] = []
-        watcher.onCopy = { content, _ in copies.append(content) }
+        let png = try Fixture.png(width: 3, height: 2)
 
         // A browser image copy ships the bitmap with the image's URL as its
         // only text; the bitmap is what the user meant to copy.
-        let png = try Fixture.png(width: 3, height: 2)
-        pasteboard.declareTypes([.string, .png], owner: nil)
-        pasteboard.setString("https://example.com/pic.png", forType: .string)
-        pasteboard.setData(png, forType: .png)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        guard case .image(let data) = copies.first else {
-            Issue.record("expected the bitmap")
-            return
+        let copies = captures { pasteboard in
+            pasteboard.declareTypes([.string, .png], owner: nil)
+            pasteboard.setString("https://example.com/pic.png", forType: .string)
+            pasteboard.setData(png, forType: .png)
         }
-        #expect(data == png)
+
+        #expect(copies.map(\.content.image) == [png])
     }
 
     @Test func rtfFlavorIsCapturedOnTextCopies() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        let rtf = Data("{\\rtf1 hello}".utf8)
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var captured: [Data?] = []
-        watcher.onCopy = { content, _ in
-            guard case .text(_, _, let rtf) = content else { return }
-            captured.append(rtf)
+        let copies = captures { pasteboard in
+            pasteboard.setString("hello", forType: .string)
+            pasteboard.setData(rtf, forType: .rtf)
         }
 
-        let rtf = Data("{\\rtf1 hello}".utf8)
-        pasteboard.clearContents()
-        pasteboard.setString("hello", forType: .string)
-        pasteboard.setData(rtf, forType: .rtf)
-        watcher.poll()
-
-        #expect(captured == [rtf])
+        #expect(copies.map(\.content.rtf) == [rtf])
     }
 
     @Test func oversizedRTFIsDroppedButStringStillReported() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
-
-        var copies: [(string: String, rtf: Data?)] = []
-        watcher.onCopy = { content, _ in
-            guard case .text(let string, _, let rtf) = content else { return }
-            copies.append((string: string, rtf: rtf))
+        let copies = captures { pasteboard in
+            pasteboard.setString("still recorded", forType: .string)
+            pasteboard.setData(Data(count: 300_001), forType: .rtf)
         }
 
-        pasteboard.clearContents()
-        pasteboard.setString("still recorded", forType: .string)
-        pasteboard.setData(Data(count: 300_001), forType: .rtf)
-        watcher.poll()
-
-        #expect(copies.count == 1)
-        #expect(copies.first?.string == "still recorded")
-        #expect(copies.first?.rtf == nil)
+        #expect(copies.map(\.content.string) == ["still recorded"])
+        #expect(copies.map(\.content.rtf) == [nil])
     }
 
     @Test func ownWriteSuppressionStillRecordsACopyThePollerNeverSaw() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        withPrivatePasteboard { pasteboard in
+            let source = CopySource(name: nil, bundleID: nil)
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            var copies: [String] = []
+            watcher.onCopy = { content, _ in
+                guard case .text(let string, _, _) = content else { return }
+                copies.append(string)
+            }
 
-        var copies: [String] = []
-        watcher.onCopy = { content, _ in
-            guard case .text(let string, _, _) = content else { return }
-            copies.append(string)
-        }
-
-        // The exact losing sequence: the user copies in another app and hits
-        // the hotkey before the next poll tick, so this change is still
-        // pending. Resyncing without draining it first discarded it forever —
-        // the pasteboard only ever exposes its latest state.
-        pasteboard.clearContents()
-        pasteboard.setString("copied a moment ago", forType: .string)
-
-        watcher.suppressingOwnWrite {
+            // The exact losing sequence: the user copies in another app and
+            // hits the hotkey before the next poll tick, so this change is
+            // still pending. Resyncing without draining it first discarded it
+            // forever — the pasteboard only ever exposes its latest state.
             pasteboard.clearContents()
-            pasteboard.setString("what Backpocket pasted", forType: .string)
+            pasteboard.setString("copied a moment ago", forType: .string)
+
+            watcher.suppressingOwnWrite {
+                pasteboard.clearContents()
+                pasteboard.setString("what Backpocket pasted", forType: .string)
+            }
+
+            #expect(copies == ["copied a moment ago"])
+
+            // And the app's own write stays suppressed afterwards, which is
+            // the other half of the contract: pasting must not re-record the
+            // item attributed to whatever app it was pasted into.
+            watcher.poll()
+            #expect(copies == ["copied a moment ago"])
         }
-
-        #expect(copies == ["copied a moment ago"])
-
-        // And the app's own write stays suppressed afterwards, which is the
-        // other half of the contract: pasting must not re-record the item
-        // attributed to whatever app it was pasted into.
-        watcher.poll()
-        #expect(copies == ["copied a moment ago"])
     }
 
     @Test func suppressionCoversOnlyTheWriteItWraps() {
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
+        withPrivatePasteboard { pasteboard in
+            let source = CopySource(name: nil, bundleID: nil)
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
 
-        let source = CopySource(name: nil, bundleID: nil)
-        let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+            var copies: [String] = []
+            watcher.onCopy = { content, _ in
+                guard case .text(let string, _, _) = content else { return }
+                copies.append(string)
+            }
 
-        var copies: [String] = []
-        watcher.onCopy = { content, _ in
-            guard case .text(let string, _, _) = content else { return }
-            copies.append(string)
-        }
+            watcher.suppressingOwnWrite {
+                pasteboard.clearContents()
+                pasteboard.setString("our paste", forType: .string)
+            }
 
-        watcher.suppressingOwnWrite {
+            // A genuine copy landing after the suppressed write is ordinary
+            // traffic again — the suppression must not latch.
             pasteboard.clearContents()
-            pasteboard.setString("our paste", forType: .string)
+            pasteboard.setString("the next real copy", forType: .string)
+            watcher.poll()
+
+            #expect(copies == ["the next real copy"])
         }
-
-        // A genuine copy landing after the suppressed write is ordinary
-        // traffic again — the suppression must not latch.
-        pasteboard.clearContents()
-        pasteboard.setString("the next real copy", forType: .string)
-        watcher.poll()
-
-        #expect(copies == ["the next real copy"])
     }
 
     @Test func aFileCopyIsCapturedAsAFileCopyAndPlainTextIsNot() throws {
@@ -536,31 +377,16 @@ struct ClipboardWatcherTests {
         try Fixture.png(width: 3, height: 2).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
 
-        func capture(_ write: (NSPasteboard) -> Void) -> CopySource? {
-            let pasteboard = Self.makePasteboard()
-            defer { pasteboard.releaseGlobally() }
-
-            let watcher = ClipboardWatcher(
-                pasteboard: pasteboard,
-                frontmostApplication: { CopySource(name: "Finder", bundleID: "com.apple.finder") }
-            )
-            var captured: CopySource?
-            watcher.onCopy = { _, source in captured = source }
-
-            pasteboard.clearContents()
-            write(pasteboard)
-            watcher.poll()
-            return captured
-        }
-
         // File-ness cannot be recovered later — the TEXT of a path and a copy
         // of the FILE at that path produce identical content — so the capture
         // is the only place that can tell them apart.
-        let fileCopy = try #require(capture { $0.writeObjects([file as NSURL]) })
-        #expect(fileCopy.isFileCopy)
+        let fileCopy = try #require(
+            captures(from: Self.finder) { $0.writeObjects([file as NSURL]) }.first)
+        #expect(fileCopy.source.isFileCopy)
 
-        let typed = try #require(capture { $0.setString(file.path, forType: .string) })
-        #expect(!typed.isFileCopy)
+        let typed = try #require(
+            captures(from: Self.finder) { $0.setString(file.path, forType: .string) }.first)
+        #expect(!typed.source.isFileCopy)
     }
 
     @Test func aCopyOfTooManyFilesIsRecordedAsPlainText() throws {
@@ -576,23 +402,31 @@ struct ClipboardWatcherTests {
             return file as NSURL
         }
 
-        let pasteboard = Self.makePasteboard()
-        defer { pasteboard.releaseGlobally() }
-
-        let watcher = ClipboardWatcher(
-            pasteboard: pasteboard,
-            frontmostApplication: { CopySource(name: "Finder", bundleID: "com.apple.finder") }
-        )
-        var captured: CopySource?
-        watcher.onCopy = { _, source in captured = source }
-
-        pasteboard.clearContents()
-        pasteboard.writeObjects(urls)
-        watcher.poll()
+        let copies = captures(from: Self.finder) { $0.writeObjects(urls) }
 
         // Recording a truncated list AS a file copy would paste a silent
         // subset of what the user selected; as text the paths at least stay
         // readable and honest.
-        #expect(try #require(captured).isFileCopy == false)
+        #expect(try #require(copies.first).source.isFileCopy == false)
+    }
+}
+
+/// The parts of a copy the assertions above compare, so each can state what
+/// it expects in one line rather than unwrap the payload by hand. nil when the
+/// copy is the other kind.
+extension CopiedContent {
+    fileprivate var string: String? {
+        guard case .text(let string, _, _) = self else { return nil }
+        return string
+    }
+
+    fileprivate var rtf: Data? {
+        guard case .text(_, _, let rtf) = self else { return nil }
+        return rtf
+    }
+
+    fileprivate var image: Data? {
+        guard case .image(let data) = self else { return nil }
+        return data
     }
 }
