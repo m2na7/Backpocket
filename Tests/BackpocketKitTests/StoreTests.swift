@@ -254,9 +254,13 @@ struct StoreTests: InMemoryStoreSuite {
         // told the write did not happen rather than closing as if it had.
         await addImage(try Fixture.png(width: 4, height: 4))
         let image = try #require(store.items.first { $0.isImage })
+        let placeholder = image.content
 
         #expect(store.update(image, content: "typed over the placeholder") == false)
-        #expect(image.content != "typed over the placeholder")
+        // Untouched, not merely different: the placeholder still names the
+        // pixels, and the row still renders as the image it is.
+        #expect(image.content == placeholder)
+        #expect(image.isImage)
     }
 
     @Test func togglePinFlips() throws {
@@ -528,17 +532,6 @@ struct StoreTests: InMemoryStoreSuite {
 
         #expect(store.items.filter(\.isNote).map(\.content) == [placeholder])
         #expect(store.items.contains { $0.isImage && !$0.isNote })
-    }
-
-    @Test func updateOnImageItemIsIgnored() async throws {
-        await addImage(try Fixture.png(width: 4, height: 3))
-        let image = try #require(store.items.first)
-        let placeholder = image.content
-
-        store.update(image, content: "hacked")
-
-        #expect(image.content == placeholder)
-        #expect(image.isImage)
     }
 
     @Test func copyMatchingANoteRecordsAClipInsteadOfHijackingIt() throws {
