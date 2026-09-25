@@ -135,7 +135,10 @@ cp build/Backpocket.zip build/appcast/
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   build/appcast
 cp build/appcast/appcast.xml build/appcast.xml
-grep -q 'edSignature' build/appcast.xml || die "appcast has no signature"
+# Kept rather than merely checked for: this build's signature is also how the
+# live feed is recognised as this release's once it is deployed.
+SIGNATURE="$(grep -o -m 1 'sparkle:edSignature="[^"][^"]*"' build/appcast.xml)" ||
+  die "appcast has no signature"
 
 step "Publishing"
 # Annotated and explicitly messaged. A bare `git tag` is lightweight until
@@ -183,9 +186,26 @@ SITE=notes/appcast-site
 if [ -d "$SITE/public" ]; then
   cp build/appcast.xml "$SITE/public/appcast.xml"
   (cd "$SITE" && npx --yes wrangler deploy) || die "wrangler deploy failed"
-  sleep 2
-  curl -fsS "$FEED_URL" | grep -q "$VERSION" ||
-    die "the live feed does not mention $VERSION yet"
+
+  # A deploy takes a moment to be served everywhere, so the feed is polled
+  # with a growing wait, about two minutes in all, before this is called a
+  # failure — by now the release, the tag and the cask are public, and a
+  # propagation delay is not a failed release. What it looks for is this
+  # build's signature, since a version number alone also matches digits
+  # elsewhere in the file. Fetched into a variable rather than piped into
+  # grep, whose early exit can fail the pipe under pipefail. The plain URL,
+  # no cache-busting query: it is the one installed copies ask.
+  LIVE=0
+  for delay in 2 4 8 15 30 30 30; do
+    sleep "$delay"
+    FEED="$(curl -fsS --max-time 10 "$FEED_URL" 2>/dev/null || true)"
+    if grep -qF -- "$SIGNATURE" <<<"$FEED"; then
+      LIVE=1
+      break
+    fi
+  done
+  [ "$LIVE" = 1 ] ||
+    die "the live feed still lacks this build after two minutes — the release, the tag and the cask ARE already published, so do not re-run this; check $FEED_URL and redeploy $SITE by hand if it stays stale"
 else
   echo "release.sh: $SITE is missing — upload build/appcast.xml by hand," >&2
   echo "  or no installed copy will learn this release exists." >&2
