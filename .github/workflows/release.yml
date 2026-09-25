@@ -23,8 +23,11 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
 jobs:
+  # Bounded for the same reason as ci.yml's jobs: a hung test would otherwise
+  # hold the runner for GitHub's 360-minute default.
   test:
     runs-on: macos-26
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -34,9 +37,12 @@ jobs:
       - run: swift format lint --strict --recursive Sources Tests
       - run: ./scripts/check-localization.sh
 
+  # Room for a universal build plus notarization, which is itself capped at
+  # 15 minutes below.
   release:
     needs: test
     runs-on: macos-26
+    timeout-minutes: 45
     permissions:
       contents: write
     env:

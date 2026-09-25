@@ -9,10 +9,14 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the previous run for the same ref.
+# A new push to a pull request supersedes the run before it. Runs on main are
+# never cancelled: each commit there gets a verdict, which bisecting needs and
+# which is the only record of whether the HEAD release.sh tags was green. They
+# are grouped by commit rather than by branch, because a shared group would
+# still cancel a queued run when a third push arrived behind it.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Pinned, not defaulted. Without this the runner picks whatever Xcode the
@@ -24,9 +28,14 @@ env:
   # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
+# Every job normally finishes in a few minutes. The limits are for a hang
+# — a test awaiting a callback that never comes, a loop a regression made
+# endless — which would otherwise hold a macOS runner for GitHub's 360-minute
+# default.
 jobs:
   build-and-test:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: swift --version
@@ -35,6 +44,7 @@ jobs:
 
   lint:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # swift-format ships with the toolchain; no install step.
@@ -48,6 +58,7 @@ jobs:
   # broken tag rather than a red PR.
   package:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: swift build -c release
@@ -73,6 +84,7 @@ jobs:
   # from.
   mas:
     runs-on: macos-26
+    timeout-minutes: 20
     env:
       # Job-level, because every swift invocation re-reads Package.swift and
       # that is where the variant is decided. The scratch path is the one
