@@ -29,8 +29,10 @@ PKG_ID="$(security find-identity -v |
 PROFILE="${BACKPOCKET_PROFILE:-packaging/Backpocket_Mac_App_Store.provisionprofile}"
 [ -f "$PROFILE" ] || die "no provisioning profile at $PROFILE"
 
-git diff --quiet && git diff --cached --quiet ||
-  die "working tree is dirty; a submission must be reproducible from a commit"
+# Untracked files count: SwiftPM compiles every source under Sources/ and
+# build.sh copies every .lproj, tracked or not.
+[ -z "$(git status --porcelain)" ] ||
+  die "working tree is dirty or has untracked files; a submission must be reproducible from a commit"
 
 echo "  app identity: $APP_ID"
 echo "  pkg identity: $PKG_ID"

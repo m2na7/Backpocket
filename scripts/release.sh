@@ -46,8 +46,11 @@ IDENTITY="$(security find-identity -v -p codesigning |
 xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 ||
   die "no notarytool profile '$PROFILE' — see 'xcrun notarytool store-credentials'"
 
-git diff --quiet && git diff --cached --quiet ||
-  die "working tree is dirty; a release must be reproducible from a commit"
+# Untracked files count. SwiftPM compiles every source under Sources/ and
+# build.sh copies every .lproj, tracked or not, so a stray file would ship in
+# the build while the tag pushed below does not contain it.
+[ -z "$(git status --porcelain)" ] ||
+  die "working tree is dirty or has untracked files; a release must be reproducible from a commit"
 
 [ -x "$TOOLS/generate_appcast" ] || die "Sparkle tools missing — run 'swift build'"
 
