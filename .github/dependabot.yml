@@ -1,0 +1,10 @@
+# The workflows pin every action to a commit SHA, and a SHA never moves on
+# its own: checkout sat on a node20 release long after GitHub deprecated that
+# runtime because nothing ever proposed the next one. Dependabot bumps the SHA
+# and its version comment together, as a pull request CI then has to pass.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
