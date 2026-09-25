@@ -5,23 +5,27 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Fetches and caches link favicons. Opt-in: with the setting off (the
-/// default) this file makes no network request and reads nothing from disk,
-/// so "zero network calls" stays true out of the box and turning the setting
-/// back off makes the feature inert rather than merely quiet.
+/// Fetches and caches link favicons. Governed by `FaviconFetching`, which is
+/// on by default and a switch in Settings: with it off this file makes no
+/// network request and reads nothing from disk, so turning the setting off
+/// makes the feature inert rather than merely quiet.
 ///
-/// What a lookup does, at most: three GETs to the link's own host over HTTPS
-/// on the default port — /favicon.ico, the ROOT page (never the copied URL's
-/// own path, which can carry private tokens) to read its declared
-/// <link rel="icon">, and the parent domain's /favicon.ico for hosts behind a
-/// login wall. Successes and failures alike are written to
+/// What a lookup does, at most: four GETs over HTTPS. Three are built here,
+/// on the default port — the link host's /favicon.ico, its ROOT page (never
+/// the copied URL's own path, which can carry private tokens) to read the
+/// declared <link rel="icon">, and the parent domain's /favicon.ico for hosts
+/// behind a login wall. The fourth is that declared icon, which is the site's
+/// own choice and may name another public host, such as its CDN, and a port.
+/// Successes and failures alike are written to
 /// Application Support/Backpocket/Favicons, keyed by host, and expire after
 /// two weeks; the directory is capped and `clearCachedIcons()` empties it.
 ///
 /// The security posture, in order of importance:
-/// - HTTPS only, straight to the link's own host — never a third-party
-///   favicon service, so the domains a user copies leak to no one new. Every
-///   redirect hop is vetted against the same rules, and the chain is capped.
+/// - HTTPS only, and never a third-party favicon service, so the domains a
+///   user copies leak to no one new. Only a declared icon or a redirect can
+///   take a request past the link's host and its parent domain, and then only
+///   to another public host; every redirect hop is vetted against the same
+///   rules, and the chain is capped.
 /// - Local and private hosts (localhost, `*.local`, `.onion`, IP literals in
 ///   any notation) are never contacted — a clipboard full of dev URLs must
 ///   not probe the LAN.
@@ -62,7 +66,7 @@ final class Favicons {
 
     private var cache: [String: NSImage] = [:]
     /// Hosts known to have no usable icon. Backed by dated markers on disk so
-    /// a dead host is not re-probed with three requests on every launch.
+    /// a dead host is not re-probed with up to four requests on every launch.
     private var failed: Set<String> = []
     private var inFlight: [String: Task<Data?, Never>] = [:]
     private var waiters = FetchWaiters()
@@ -78,13 +82,13 @@ final class Favicons {
         return URLSession(configuration: configuration)
     }()
 
-    /// A whole list scrolling into view would otherwise start three requests
-    /// per visible row at once.
+    /// A whole list scrolling into view would otherwise start a download for
+    /// every visible row's host at once.
     private nonisolated static let limiter = FetchLimiter(limit: 3)
 
     func icon(for url: URL) async -> NSImage? {
         // The preference gates the disk cache too: with it off nothing an
-        // earlier opt-in left behind is read, and the feature is inert.
+        // earlier session left behind is read, and the feature is inert.
         guard FaviconFetching.isEnabled else { return nil }
         guard
             let host = Self.normalizedHost(url.host(percentEncoded: false)),
@@ -437,8 +441,8 @@ final class Favicons {
 
     /// Internal rather than private only so the disk cache can be read back
     /// directly, for the reason `RedirectGuard` is: a host recorded as having
-    /// no icon must not be re-probed with three requests on every launch, and
-    /// the alternative to asserting on it here is a real fetch.
+    /// no icon must not be re-probed with up to four requests on every
+    /// launch, and the alternative to asserting on it here is a real fetch.
     enum DiskEntry: Sendable, Equatable {
         case icon(Data)
         case miss
@@ -685,8 +689,8 @@ actor FetchLimiter {
 ///
 /// The cost is real and is the reason this stays a switch. Each fetch tells
 /// the linked site's server that this machine holds that link, so a user who
-/// does not want that trade turns it off in Settings and the app makes no
-/// request at all.
+/// does not want that trade turns it off in Settings and this feature makes
+/// no request at all.
 enum FaviconFetching {
     static let `default` = true
 

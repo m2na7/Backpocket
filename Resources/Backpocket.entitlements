@@ -7,8 +7,9 @@
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 
-	<!-- The opt-in favicon fetcher (off by default) makes outbound HTTPS GETs
-	     to the link's own host. Outbound only; no server is ever run. -->
+	<!-- The favicon fetcher (on by default, a switch in Settings) makes
+	     outbound HTTPS GETs to public hosts. Outbound only; no server is ever
+	     run. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 

@@ -113,7 +113,7 @@ final class Updater: ObservableObject {
         controller.checkForUpdates(nil)
     }
 
-    /// Whether Backpocket makes any unprompted request at all.
+    /// Whether the updater asks the appcast for a newer build on its own.
     ///
     /// Static, and reached without an `Updater` instance, because Settings
     /// needs it and the updater is owned by the menu-bar scene. It is stored

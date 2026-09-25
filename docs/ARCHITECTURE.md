@@ -190,11 +190,12 @@ a bug in this document.
   defined in `ItemRow`.
 - `AppIcon` — per-bundle-ID and per-file-path icon caches (`NSWorkspace`
   lookups are too slow to repeat on every row render).
-- `Favicons` — the panel's one network-capable component: opt-in link-icon
-  fetching (off by default), vetted to the link's own host over HTTPS (with
-  redirects checked and capped), backed by a size- and age-bounded on-disk
-  cache that also remembers misses so a dead host isn't reprobed every
-  launch.
+- `Favicons` — the panel's one network-capable component: link-icon fetching
+  (on by default, switchable off in Settings), over HTTPS to public hosts only
+  — the link's host and its parent domain, plus whatever public host a
+  declared icon or a redirect names (every hop checked, the chain capped) —
+  backed by a size- and age-bounded on-disk cache that also remembers misses
+  so a dead host isn't reprobed every launch.
 
 ### `Settings`
 
@@ -250,18 +251,21 @@ a bug in this document.
   load-bearing for a tool that reads everything you copy: every dependency is
   someone else's code running with the same access. Adding a second needs the
   same argument Sparkle had to win, in an issue, first.
-- **The updater is the only unprompted request**, and `Updater` is the only
-  place that starts it. It refuses to start against a feed it cannot use,
-  because starting on a bad feed hangs the app before its first window. Updates carry
-  an EdDSA signature checked against `SUPublicEDKey` before install — that
-  check is what separates an update channel from a remote execution channel,
-  and nothing may make it conditional.
-- **Nothing else reaches the network by default.** The one exception is
-  `Favicons`, off unless the
-  user turns it on (`FaviconFetching.isEnabled`): over HTTPS, to the link's
-  own host — its root page and parent domain included — never a third-party
-  favicon service, never local or private hosts, through an ephemeral
-  cookie-less session. Everything else: no URLSession, no sockets.
+- **The updater is one of two unprompted requests**, and `Updater` is the
+  only place that starts it. It refuses to start against a feed it cannot
+  use, because starting on a bad feed hangs the app before its first window.
+  Updates carry an EdDSA signature checked against `SUPublicEDKey` before
+  install — that check is what separates an update channel from a remote
+  execution channel, and nothing may make it conditional.
+- **The other is `Favicons`, and nothing else reaches the network.** It is on
+  by default and fully inert while the user has it off
+  (`FaviconFetching.isEnabled`): over HTTPS only, never a third-party favicon
+  service, never local or private hosts, through an ephemeral cookie-less
+  session. The requests it builds itself go to the link's host — its root
+  page included — and the parent domain; a declared icon or a redirect may
+  land on another public host, such as the site's CDN, and every redirect hop
+  is vetted by the same rules with the chain capped. Everything else: no
+  URLSession, no sockets.
 - **A clip and a note are one row.** `Item` is the only model; `isNote` is a
   flag, not a table. Converting a clip to a note mutates in place, keeping
   source and timestamps. This is the product thesis, not a storage shortcut.
