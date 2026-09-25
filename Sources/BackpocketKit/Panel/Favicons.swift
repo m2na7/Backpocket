@@ -658,12 +658,16 @@ actor FetchLimiter {
 
     func run<T: Sendable>(_ work: @Sendable () async -> T) async -> T {
         if active >= limit {
+            // The finisher hands its slot straight over, so a resumed waiter
+            // already holds one. Freeing it and taking it again would leave a
+            // gap while the waiter hops back onto the actor, and a caller
+            // arriving in that gap would take the same slot too.
             await withCheckedContinuation { waiting.append($0) }
+        } else {
+            active += 1
         }
-        active += 1
         defer {
-            active -= 1
-            if !waiting.isEmpty { waiting.removeFirst().resume() }
+            if waiting.isEmpty { active -= 1 } else { waiting.removeFirst().resume() }
         }
         return await work()
     }

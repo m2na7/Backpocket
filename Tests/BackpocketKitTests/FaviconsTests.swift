@@ -300,6 +300,41 @@ private actor ConcurrencyPeak {
         #expect(await tracker.peak > 1)
     }
 
+    /// The same cap, with callers arriving while others finish — the way rows
+    /// scrolling into view actually ask. A slot a finisher frees must go to
+    /// the waiter it wakes, not to a newcomer that reaches the actor while
+    /// that waiter is still on its way back onto it.
+    ///
+    /// The short body is deliberate. With the fifty yields above every caller
+    /// has queued long before the first one leaves, so nobody arrives into
+    /// that gap and a limiter that re-takes slots passes; here arrivals and
+    /// departures interleave, which is what exposed it. Several rounds, so a
+    /// regression fails every run rather than most of them.
+    @Test func theFetchLimiterHoldsItsLimitAsCallersKeepArriving() async {
+        var peak = 0
+        for _ in 0..<5 {
+            let limiter = FetchLimiter(limit: 3)
+            let tracker = ConcurrencyPeak()
+
+            await withTaskGroup(of: Void.self) { group in
+                for index in 0..<40 {
+                    group.addTask {
+                        for _ in 0..<(index % 7) { await Task.yield() }
+                        await limiter.run {
+                            await tracker.enter()
+                            for _ in 0..<5 { await Task.yield() }
+                            await tracker.leave()
+                        }
+                    }
+                }
+            }
+            peak = max(peak, await tracker.peak)
+        }
+
+        #expect(peak <= 3)
+        #expect(peak > 1)
+    }
+
     /// Each guarantee about where bytes travel has to hold on every hop:
     /// without vetting, URLSession follows up to twenty redirects unchecked
     /// and a public site can point one straight back into the user's network.
