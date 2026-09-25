@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 
 /// Every user-facing preference, as cases rather than loose constants: the
