@@ -139,26 +139,37 @@ final class Favicons {
 
         waiters.join(host)
         defer {
-            if waiters.leave(host) { inFlight[host] = nil }
+            // A clear discards the waiter counts along with the tasks, so a
+            // row whose download is no longer the host's current one was
+            // counted in a generation that is gone. Leaving would decrement
+            // the next generation's count instead, and could drop the
+            // download a newer row is sharing.
+            if inFlight[host] == task, waiters.leave(host) { inFlight[host] = nil }
         }
 
         let png = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
-            Task { @MainActor [weak self] in self?.cancelIfSoleWaiter(host: host) }
+            Task { @MainActor [weak self] in self?.cancelIfSoleWaiter(host: host, task: task) }
         }
 
         guard let png, let image = NSImage(data: png) else {
-            if !Task.isCancelled { failed.insert(host) }
+            // A download cancelled under this row, by a clear or by the last
+            // other waiter giving up, comes back empty without having asked
+            // the host anything, so it is no reason to stop asking.
+            if !Task.isCancelled, !task.isCancelled { failed.insert(host) }
             return nil
         }
         cache[host] = image
         return image
     }
 
-    private func cancelIfSoleWaiter(host: String) {
-        guard waiters.isSole(host) else { return }
-        inFlight[host]?.cancel()
+    /// Only the download the asker joined is its to cancel. After a clear the
+    /// host's current one may be newer, with rows of its own waiting, and the
+    /// count that would call the asker sole is that generation's.
+    private func cancelIfSoleWaiter(host: String, task: Task<Data?, Never>) {
+        guard inFlight[host] == task, waiters.isSole(host) else { return }
+        task.cancel()
     }
 
     /// The three attempts, off the main actor and behind the fetch limit.
@@ -192,6 +203,12 @@ final class Favicons {
                 if !Task.isCancelled { recordMiss(host: host) }
                 return nil
             }
+            // A clear cancels this download, and one that lands after the
+            // last byte must not have the host written back into the
+            // directory it just emptied. This narrows that window rather
+            // than closing it: the write runs off the main actor, so a clear
+            // can still fall between this check and the file.
+            guard !Task.isCancelled else { return nil }
             store(png: png, host: host)
             return png
         }
@@ -224,6 +241,12 @@ final class Favicons {
     private nonisolated static func body(
         at url: URL, cap: Int, accepting types: Set<String>
     ) async -> (body: Data, page: URL)? {
+        #if DEBUG
+        if let respond = FaviconNetworkOverride.respond {
+            return await respond(url).map { ($0, url) }
+        }
+        #endif
+
         guard let (bytes, response) = try? await session.bytes(from: url, delegate: RedirectGuard())
         else { return nil }
 
@@ -734,5 +757,20 @@ struct FaviconView: View {
 /// download path.
 enum FaviconCacheOverride {
     @TaskLocal static var directory: URL?
+}
+
+/// Stands in for the network when a test drives a lookup end to end.
+///
+/// The parts of a fetch that race — the shared download, the cancellation a
+/// clear sends it, the disk write that follows — cannot be reached without
+/// one, and the suite makes no real request. A test that needs a fetch
+/// supplies each response's body here instead, and everything around the
+/// transfer runs as it does in the app.
+///
+/// A task-local for the reason `FaviconCacheOverride` is one. It reaches the
+/// download because the unstructured task that runs it inherits the
+/// task-locals of the lookup that started it.
+enum FaviconNetworkOverride {
+    @TaskLocal static var respond: (@Sendable (URL) async -> Data?)?
 }
 #endif
