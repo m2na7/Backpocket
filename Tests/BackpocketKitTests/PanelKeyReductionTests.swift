@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Testing
 
@@ -86,5 +87,91 @@ struct PanelKeyReductionTests {
     @Test func aMatchedShortcutIsCarriedThrough() {
         #expect(reduce("e", modifiers: [.command], shortcut: .edit).shortcut == .edit)
         #expect(reduce("e", modifiers: [.command]).shortcut == nil)
+    }
+
+    /// Reduces `key` with a physical-key lookup that answers "z" and counts
+    /// how often it was asked.
+    private func physicalLookups(
+        _ key: KeyEquivalent, isRepeat: Bool = false, modifiers: EventModifiers,
+        composing: Bool = false
+    ) -> (press: PanelKeyPress, lookups: Int) {
+        var lookups = 0
+        let press = PanelKeyPress(
+            key: key, isRepeat: isRepeat, modifiers: modifiers, matchingShortcut: { nil },
+            physicalKey: {
+                lookups += 1
+                return "z"
+            },
+            isComposing: { composing })
+        return (press, lookups)
+    }
+
+    /// ⌘ and a letter from a non-Latin script: the one press whose
+    /// character says nothing about the key, so the key is looked up.
+    @Test func commandAloneOnANonLatinLetterCarriesThePhysicalKey() {
+        for letter in ["ㅋ", "つ", "я", "ω"] {
+            let reduced = physicalLookups(KeyEquivalent(Character(letter)), modifiers: [.command])
+            #expect(reduced.press.physical == "z")
+            #expect(reduced.lookups == 1)
+        }
+    }
+
+    /// Everywhere else the lookup is not made at all: typing, repeats,
+    /// Latin letters, and ⌘ with any other modifier. ⌘⌥Z types "Ω" on a US
+    /// layout, and borrowing its key would turn that into an undo.
+    @Test func everyOtherPressSkipsThePhysicalLookup() {
+        let skipped: [(KeyEquivalent, Bool, EventModifiers)] = [
+            ("ㅋ", false, []),
+            ("ㅋ", true, [.command]),
+            ("z", false, [.command]),
+            ("é", false, [.command]),
+            ("ㅋ", false, [.command, .shift]),
+            ("Ω", false, [.command, .option]),
+            ("ㅋ", false, [.command, .control]),
+            (.return, false, [.command]),
+            (.escape, false, [.command]),
+        ]
+        for (key, isRepeat, modifiers) in skipped {
+            let reduced = physicalLookups(key, isRepeat: isRepeat, modifiers: modifiers)
+            #expect(reduced.press.physical == nil)
+            #expect(reduced.lookups == 0)
+        }
+
+        // And so the dispatcher sees ⌘⌥Z's "Ω" as nothing it owns.
+        var restorable = PanelKeyContext()
+        restorable.canUndoDelete = true
+        let composed = physicalLookups("Ω", modifiers: [.command, .option]).press
+        #expect(PanelKeyboard.command(for: composed, in: restorable) == .unhandled)
+    }
+
+    /// ⌘ on the Z key over a syllable the input method has not committed
+    /// yet is the field's undo, whatever `hasQuery` says. So the press
+    /// borrows no key, and the key is not even looked up.
+    @Test func aPressWhileTheFieldIsComposingNeverFallsBack() {
+        let reduced = physicalLookups("ㅋ", modifiers: [.command], composing: true)
+        #expect(reduced.press.physical == nil)
+        #expect(reduced.lookups == 0)
+
+        var restorable = PanelKeyContext()
+        restorable.canUndoDelete = true
+        #expect(PanelKeyboard.command(for: reduced.press, in: restorable) == .unhandled)
+    }
+
+    /// What the panel asks of its field: whether its text view holds marked
+    /// text, which is how an input method shows a syllable in progress.
+    @Test func markedTextInTheFieldIsComposing() {
+        let field = NSTextView()
+        #expect(!PanelKeyPress.isComposing(field))
+
+        field.setMarkedText(
+            "ㅎ", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(PanelKeyPress.isComposing(field))
+
+        field.unmarkText()
+        #expect(!PanelKeyPress.isComposing(field))
+        // A panel with no text view focused has nothing in progress.
+        #expect(!PanelKeyPress.isComposing(nil))
+        #expect(!PanelKeyPress.isComposing(NSView()))
     }
 }

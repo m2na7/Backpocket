@@ -17,11 +17,13 @@ struct PanelKeyboardTests {
         shift: Bool = false,
         isRepeat: Bool = false,
         shortcut: PanelShortcut? = nil,
+        physical: String? = nil,
         _ context: PanelKeyContext = PanelKeyContext()
     ) -> PanelCommand {
         PanelKeyboard.command(
             for: PanelKeyPress(
-                key: key, isRepeat: isRepeat, command: command, shift: shift, shortcut: shortcut),
+                key: key, isRepeat: isRepeat, command: command, shift: shift, shortcut: shortcut,
+                physical: physical),
             in: context
         )
     }
@@ -59,6 +61,56 @@ struct PanelKeyboardTests {
 
         @Test func plainZIsJustACharacter() {
             #expect(tests.command(.character("z")) == .unhandled)
+        }
+
+        /// Under a Korean layout the Z key types "ㅋ", so an undo matched on
+        /// the character alone never fired there. The key underneath is
+        /// still Z, and that is what a non-Latin letter falls back to.
+        @Test func commandZFiresOnTheZKeyUnderAKoreanLayout() {
+            #expect(
+                tests.command(.character("ㅋ"), command: true, physical: "z", restorable)
+                    == .undoDelete)
+        }
+
+        /// The fallback changes which key is ⌘Z, not when the panel may
+        /// claim it: the field keeps its own undo exactly as before.
+        @Test func theZKeyUnderAKoreanLayoutStillDefersToTheField() {
+            var typing = restorable
+            typing.hasQuery = true
+            #expect(
+                tests.command(.character("ㅋ"), command: true, physical: "z", typing)
+                    == .unhandled)
+            #expect(tests.command(.character("ㅋ"), command: true, physical: "z") == .unhandled)
+        }
+
+        /// ⌘⇧Z is redo, whatever the layout types for it.
+        @Test func commandShiftOnTheZKeyIsNotAnUndo() {
+            #expect(
+                tests.command(
+                    .character("ㅋ"), command: true, shift: true, physical: "z", restorable)
+                    == .unhandled)
+        }
+
+        /// AZERTY prints Z on the key where QWERTY has W. A Latin layout
+        /// keeps matching on the letter the user sees, so the Z it prints is
+        /// ⌘Z and the key underneath that types W never becomes one.
+        @Test func aLatinLayoutKeepsItsPrintedZ() {
+            #expect(
+                tests.command(.character("z"), command: true, physical: "w", restorable)
+                    == .undoDelete)
+            #expect(
+                tests.command(.character("w"), command: true, physical: "z", restorable)
+                    == .unhandled)
+        }
+
+        /// A Latin letter with a diacritic is a key of its own on the layouts
+        /// that type it, so it never borrows the key underneath either.
+        @Test func anAccentedLatinLetterIsNeverTheZKey() {
+            for letter: Character in ["é", "ö", "ž", "ạ"] {
+                #expect(
+                    tests.command(.character(letter), command: true, physical: "z", restorable)
+                        == .unhandled)
+            }
         }
     }
 

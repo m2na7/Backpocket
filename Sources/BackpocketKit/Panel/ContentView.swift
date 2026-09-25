@@ -757,7 +757,9 @@ struct ContentView: View {
             key: press.key,
             isRepeat: press.phase != .down,
             modifiers: press.modifiers,
-            matchingShortcut: { PanelShortcut.match(press) }
+            matchingShortcut: { PanelShortcut.match(press) },
+            physicalKey: { PanelShortcut.physicalKeyName() },
+            isComposing: { PanelKeyPress.isComposing(NSApp.keyWindow?.firstResponder) }
         )
         return perform(PanelKeyboard.command(for: reduced, in: keyContext))
     }

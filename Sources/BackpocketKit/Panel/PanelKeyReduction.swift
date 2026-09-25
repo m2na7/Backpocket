@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension PanelKeyPress {
@@ -16,14 +17,27 @@ extension PanelKeyPress {
     /// reach a shortcut (a binding is built from an ANSI key name or
     /// "delete", so it can never be ⇥, esc, ↩ or an arrow) and a repeat's is
     /// discarded by the dispatcher anyway, so neither pays for the lookup.
+    ///
+    /// `physicalKey` is a closure for the same reason, and is asked even
+    /// less often: only for a press with ⌘ alone that types a letter from a
+    /// non-Latin script, the one case where ⌘Z falls back to the key.
+    ///
+    /// `isComposing` is asked in that same case, first, and a yes means no
+    /// fallback. ⌘Z over a Hangul syllable the input method has not
+    /// committed yet belongs to the field, like every ⌘Z with typing to
+    /// undo, but `hasQuery` cannot be trusted to see it: it reads `text`,
+    /// which may not hold the syllable before it is committed.
     init(
         key: KeyEquivalent,
         isRepeat: Bool,
         modifiers: EventModifiers,
-        matchingShortcut: () -> PanelShortcut?
+        matchingShortcut: () -> PanelShortcut?,
+        physicalKey: () -> String? = { nil },
+        isComposing: () -> Bool = { false }
     ) {
         let reduced: Key
         var matched: PanelShortcut?
+        var physical: String?
         if key == .upArrow {
             reduced = .upArrow
         } else if key == .downArrow {
@@ -37,6 +51,13 @@ extension PanelKeyPress {
         } else {
             reduced = .character(key.character)
             matched = isRepeat ? nil : matchingShortcut()
+            if !isRepeat,
+                modifiers.intersection([.command, .shift, .option, .control]) == .command,
+                Self.fallsBackToPhysicalKey(key.character),
+                !isComposing()
+            {
+                physical = physicalKey()
+            }
         }
 
         self.init(
@@ -44,7 +65,16 @@ extension PanelKeyPress {
             isRepeat: isRepeat,
             command: modifiers.contains(.command),
             shift: modifiers.contains(.shift),
-            shortcut: matched
+            shortcut: matched,
+            physical: physical
         )
+    }
+
+    /// Whether `responder` holds marked text: input the input method is
+    /// still composing, drawn underlined in the field and not committed.
+    /// The panel asks this of its first responder, the field's text view.
+    @MainActor
+    static func isComposing(_ responder: NSResponder?) -> Bool {
+        (responder as? NSTextInputClient)?.hasMarkedText() ?? false
     }
 }
