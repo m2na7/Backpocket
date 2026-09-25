@@ -8,6 +8,12 @@ import PackageDescription
 // not grant. Leaving the framework linked but unused would still ship the
 // binary, so the dependency is dropped from the manifest rather than guarded
 // in code — `Updater` compiles to a no-op under the same flag.
+//
+// Package.resolved's "originHash" is the sha256 of this file. While the two
+// match, a store build leaves the Sparkle pin alone; once they do not, its
+// resolve finds no dependencies and deletes Package.resolved, and a direct
+// build does not refresh the hash on its own. So an edit here comes with that
+// hash updated to `shasum -a 256 Package.swift`.
 let isMAS = ProcessInfo.processInfo.environment["BACKPOCKET_MAS"] == "1"
 
 let package = Package(
@@ -38,7 +44,11 @@ let package = Package(
             name: "BackpocketKitTests",
             dependencies: ["BackpocketKit"],
             path: "Tests/BackpocketKitTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            // The define again, so the tests can pin what each variant does
+            // with literals instead of comparing the app's flags to each other.
+            swiftSettings: isMAS
+                ? [.swiftLanguageMode(.v6), .define("BACKPOCKET_MAS")]
+                : [.swiftLanguageMode(.v6)]
         ),
     ]
 )

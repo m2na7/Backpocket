@@ -660,7 +660,11 @@ struct PreferencesTests {
         // The one default that differs by distribution: the App Store build
         // cannot ask for the Accessibility permission, so it ships with
         // automatic pasting off rather than on and silently inert.
-        #expect(PasteBehavior.default == Paster.mayPrompt)
+        #if BACKPOCKET_MAS
+        #expect(PasteBehavior.default == false)
+        #else
+        #expect(PasteBehavior.default == true)
+        #endif
         #expect(PreviewBehavior.default == true)
         #expect(NotesVisibility.default == true)
         #expect(FaviconFetching.default == true)
