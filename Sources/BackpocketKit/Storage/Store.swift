@@ -243,16 +243,19 @@ final class Store: ObservableObject {
             return
         }
 
-        let item = Item(
+        let captured = Item(
             content: "Image \(digest.width)×\(digest.height)",
             source: source,
             imageData: data,
             thumbnailData: digest.thumbnail,
             imageHash: digest.hash
         )
-        context.insert(item)
-        items.insert(item, at: insertionIndex(for: item))
-        save()
+        // Never `context.insert`: the model `items` keeps for the session
+        // must not be the one holding the bytes. See `insertDetached`.
+        if let item = insertDetached([captured])?.first {
+            items.insert(item, at: insertionIndex(for: item))
+        }
+        revision += 1
         trimOverflow()
     }
 
@@ -352,9 +355,11 @@ final class Store: ObservableObject {
     @discardableResult
     func undoDelete() -> Bool {
         guard let snapshots = undo.takeLatest(asOf: ContinuousClock.now) else { return false }
+        defer { revision += 1 }
 
-        let restored = snapshots.map { $0.restored() }
-        restored.forEach(context.insert)
+        // Through `insertDetached` like a fresh capture: a restored image
+        // carries its full bytes again and must not pin them either.
+        guard let restored = insertDetached(snapshots.map { $0.restored() }) else { return false }
         items.append(contentsOf: restored)
         // A restore is the one insertion that does not carry the newest
         // usedAt, so `insertionIndex` — which assumes the global maximum —
@@ -365,7 +370,7 @@ final class Store: ObservableObject {
         // asked for would make undo silently do nothing whenever the history
         // sits at its cap. The cap is re-applied on the next copy and on
         // panel open, exactly as it is after the limit is lowered in Settings.
-        return save()
+        return true
     }
 
     private func recordUndo(_ doomed: some Collection<Item>) {
@@ -478,13 +483,45 @@ final class Store: ObservableObject {
         items.removeAll { ids.contains(ObjectIdentifier($0)) }
     }
 
+    /// Inserts rows through a context that lives only for this call, and
+    /// returns the main context's own instances of them once they are saved;
+    /// nil when the write failed, which `write` has already reported and
+    /// rolled `items` back from. Bumps nothing: the caller files the rows
+    /// into `items` and then bumps `revision`, as `save` does.
+    ///
+    /// Image rows come through here because a model keeps the bytes it was
+    /// given for as long as it stays registered: saving writes the
+    /// external-storage file but does not let go of the value. The main
+    /// context's models are the ones `items` holds for the whole session, so
+    /// an image inserted there would stay resident until quit. The throwaway
+    /// context carries the bytes to disk and drops them when it goes, and the
+    /// instance `items` gets is a fault that loads the row's columns and
+    /// leaves the blob on disk until `loadImageData` asks for it.
+    ///
+    /// Main-context instances, never the inserted ones: every later write to
+    /// a row in `items` — a promote, a pin, a delete — is saved through
+    /// `context`, so a model registered anywhere else would lose them.
+    private func insertDetached(_ fresh: [Item]) -> [Item]? {
+        let scratch = ModelContext(context.container)
+        fresh.forEach(scratch.insert)
+        guard write(scratch) else { return nil }
+        return fresh.compactMap { context.model(for: $0.persistentModelID) as? Item }
+    }
+
     /// Returns whether the write landed, so callers that promised the user
     /// something durable can tell them otherwise.
     @discardableResult
     private func save() -> Bool {
         defer { revision += 1 }
+        return write(context)
+    }
+
+    /// The save itself, for whichever context holds the changes: a write
+    /// through `insertDetached` has to fail exactly the way every other
+    /// write does.
+    private func write(_ changes: ModelContext) -> Bool {
         do {
-            try context.save()
+            try changes.save()
             hasStorageFailure = Persistence.isUsingFallbackStore
             return true
         } catch {
