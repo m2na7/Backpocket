@@ -60,7 +60,7 @@ struct DeletionUndo {
             sourceBundleID = item.sourceBundleID
             contentHTML = item.contentHTML
             contentRTF = item.contentRTF
-            imageData = item.imageData
+            imageData = item.loadImageData()
             thumbnailData = item.thumbnailData
             imageHash = item.imageHash
             isFileCopy = item.isFileCopy

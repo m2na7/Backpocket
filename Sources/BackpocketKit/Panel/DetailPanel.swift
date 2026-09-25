@@ -137,7 +137,9 @@ final class DetailPanel {
     private func detailContent(
         for item: Item, limit: NSSize, decodePixels: Int
     ) -> DetailContent {
-        if let data = item.imageData, let image = Self.cardImage(from: data, pixels: decodePixels) {
+        if let data = item.loadImageData(),
+            let image = Self.cardImage(from: data, pixels: decodePixels)
+        {
             // Decoded here, once per show — never during a render pass.
             return DetailContent(
                 text: "",

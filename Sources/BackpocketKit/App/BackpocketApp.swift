@@ -268,14 +268,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func paste(_ item: Item) {
+        // Which representation leaves the app is decided by PasteFlavor,
+        // where it can be tested; the switch below only carries out the
+        // answer. Asked before anything else, so that an image with nothing
+        // left to paste leaves the panel as it was instead of closing it over
+        // a paste that never comes.
+        guard let flavor = PasteFlavor.flavor(for: item) else { return }
         store?.markUsed(item)
         // Order matters: the panel must close first so the previous app is
         // frontmost again and receives the paste.
         panel?.hide()
         watcher.suppressingOwnWrite {
-            // Which representation leaves the app is decided by PasteFlavor,
-            // where it can be tested; this switch only carries out the answer.
-            switch PasteFlavor.flavor(for: item) {
+            switch flavor {
             case .image(let data):
                 Paster.pasteImage(data)
             case .files(let urls):

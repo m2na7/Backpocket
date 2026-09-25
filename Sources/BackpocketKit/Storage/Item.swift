@@ -72,6 +72,43 @@ extension Item {
         imageHash != nil
     }
 
+    /// The image's bytes, read without attaching them to this model. Paste,
+    /// the detail card and undo all read the pixels through here.
+    ///
+    /// `imageData` read straight off a registered model faults the blob in,
+    /// and the model keeps it for as long as it stays registered — for the
+    /// rows `Store.items` holds, that is until quit, so every image pasted or
+    /// previewed would stay resident for the rest of the session. A context
+    /// made for this one fetch hands the bytes to the caller alone, and they
+    /// are freed with the caller's copy.
+    ///
+    /// Only a saved image row takes that route. A text row answers from its
+    /// property, which is nil and pins nothing. A model with no context was
+    /// either never saved — a test's item, whose property still holds the
+    /// bytes it was made with — or has been deleted, and a deleted image has
+    /// nothing to give: the store no longer has the row, and the model may
+    /// never have loaded the bytes, in which case reading the property traps.
+    func loadImageData() -> Data? {
+        guard isImage else { return imageData }
+        guard let container = modelContext?.container else {
+            // Saving is what gives a model a store identifier, so a model
+            // without one never had a row to lose.
+            return persistentModelID.storeIdentifier == nil ? imageData : nil
+        }
+
+        // A fetch rather than `model(for:)`: that hands back a placeholder
+        // even for a row that is not in the store, and reading it traps. A
+        // row that is not there yet — inserted, not saved — or a fetch that
+        // fails falls back too: the bytes are still right, merely pinned.
+        let id = persistentModelID
+        var descriptor = FetchDescriptor<Item>(predicate: #Predicate { $0.persistentModelID == id })
+        descriptor.fetchLimit = 1
+        guard let stored = try? ModelContext(container).fetch(descriptor).first else {
+            return imageData
+        }
+        return stored.imageData
+    }
+
     /// Non-nil when the content is a lone web URL — that is all "link" means
     /// here. A link stays an ordinary clip; the panel merely files it under
     /// its own section when the collect-links preference asks for that, so
