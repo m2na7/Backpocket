@@ -104,9 +104,17 @@ fi
 # ditto rather than cp: a framework is a tree of symlinks (Versions/Current,
 # the top-level aliases) and copying those as regular files produces a bundle
 # that codesign rejects.
+FW="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -d "$BIN_DIR/Sparkle.framework" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then
   mkdir -p "$APP/Contents/Frameworks"
-  ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+  ditto "$BIN_DIR/Sparkle.framework" "$FW"
+  # Headers and module maps only matter to a compiler, and nothing compiles
+  # against the bundle — SwiftPM uses its copy in .build. Xcode's Embed
+  # Frameworks phase drops them for the same reason. The top-level entries
+  # are symlinks into the version directory and would dangle if left. Only
+  # these go: Sparkle's .lproj folders are where its installer reads the
+  # progress text a non-English user sees.
+  rm -rf "$FW"/Versions/Current/{Headers,PrivateHeaders,Modules} "$FW"/{Headers,PrivateHeaders,Modules}
 fi
 cp -R Resources/*.lproj "$APP/Contents/Resources/"
 
@@ -244,7 +252,6 @@ fi
 #
 # Sparkle's helpers are separate bundles by design: the updater has to
 # outlive the app it is replacing, so it cannot be code inside it.
-FW="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -d "$FW" ]; then
   for nested in \
     "$FW/Versions/B/XPCServices/Downloader.xpc" \
