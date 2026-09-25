@@ -424,7 +424,7 @@ struct DetailPanelLivenessTests {
 
     /// Trimming is a delete the user never asked for, and the card must
     /// treat it like one.
-    @Test func arowTrimmedPastTheCapIsNotLive() throws {
+    @Test func aRowTrimmedPastTheCapIsNotLive() throws {
         let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
         store.add("older", source: source)
         let older = try #require(store.items.first)
