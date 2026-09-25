@@ -49,6 +49,8 @@ a bug in this document.
 - `Onboarding` — the single-task screen shown when the accessibility
   permission is missing.
 - `DebugLaunch` — DEBUG-only launch flags (see Testing seams below).
+- `DemoSeed` — the DEBUG-only fixture content `--demo` seeds into an empty
+  store, kept out of `AppDelegate` since it only calls `Store`'s own API.
 
 ### `Clipboard`
 
