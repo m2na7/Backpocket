@@ -615,6 +615,19 @@ struct StoreTests {
         #expect(store.revision == revision + 1)
     }
 
+    @Test func aReloadBumpsTheRevision() throws {
+        store.add("top", source: source)
+        let revision = store.revision
+
+        store.reload()
+
+        // The same rows come back, but a reload is where rows changed behind
+        // the store's back would surface, and the panel's lists are a
+        // snapshot that is only retaken when the revision moves.
+        #expect(store.revision > revision)
+        #expect(store.items.map(\.content) == ["top"])
+    }
+
     @Test func aPurgeThatDeletesNothingDoesNotBumpTheRevision() throws {
         store.add("fresh", source: source)
         let revision = store.revision

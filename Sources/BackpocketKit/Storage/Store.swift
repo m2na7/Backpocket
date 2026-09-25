@@ -85,12 +85,24 @@ final class Store: ObservableObject {
         // An in-memory fallback container is a storage failure that no later
         // success can clear — every write "succeeds" and none of it survives.
         hasStorageFailure = Persistence.isUsingFallbackStore
-        reload()
+        fetchItems()
     }
 
     // MARK: Reading
 
+    /// Refetches every item. Bumps `revision` like any other change to
+    /// `items`: the panel's `PanelIndex` is a snapshot of the items keyed on
+    /// it, and a reload that left it alone would leave that snapshot
+    /// describing the rows from before.
     func reload() {
+        fetchItems()
+        revision += 1
+    }
+
+    /// `reload()` without the bump, for the two callers that need none: the
+    /// initializer, before anything can have read the store, and a failed
+    /// `save()`, which bumps on its way out whatever happens.
+    private func fetchItems() {
         do {
             items = try context.fetch(FetchDescriptor<Item>()).sorted(by: Self.ordered)
             hasStorageFailure = Persistence.isUsingFallbackStore
@@ -482,7 +494,7 @@ final class Store: ObservableObject {
             // every row back at the next launch is worse than the failure.
             logger.error("save failed: \(error, privacy: .public)")
             context.rollback()
-            reload()
+            fetchItems()
             hasStorageFailure = true
             return false
         }

@@ -336,13 +336,13 @@ a bug in this document.
   row with no backing store that also hijacks `add`'s dedup. Writes through
   stale references are dropped instead.
 - **Every change to an item bumps `Store.revision`.** `Store` makes every
-  write and each one ends in the bump; the DEBUG demo seed, which backdates
-  stamps itself, saves through `Store` afterwards. Views refilter on the
-  revision, never on `items`: an in-place change — converting or re-copying
-  the item already on top — leaves the array reference-equal. `PanelIndex`
-  goes further and snapshots the items per revision, so a write that skipped
-  the bump would leave the panel searching what the rows used to say until it
-  next opens.
+  write and each one ends in the bump, `reload()` included; the DEBUG demo
+  seed, which backdates stamps itself, saves through `Store` afterwards. Views
+  refilter on the revision, never on `items`: an in-place change — converting
+  or re-copying the item already on top — leaves the array reference-equal.
+  `PanelIndex` goes further and snapshots the items per revision, so a write
+  that skipped the bump would leave the panel searching what the rows used to
+  say until it next opens.
 - **Panels never activate the app.** `BackpocketPanel`, `DetailPanel`, and
   `EditPanel` are all non-activating; focus never leaves the paste target.
   `SettingsWindow` is the sole, deliberate exception.
