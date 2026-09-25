@@ -11,25 +11,17 @@ import Testing
 /// keeps this from becoming a shadow copy of everything deleted.
 @MainActor
 @Suite("Deletion undo")
-struct DeletionUndoTests {
-    private let store: Store
-    private let container: ModelContainer
+struct DeletionUndoTests: InMemoryStoreSuite {
+    let container: ModelContainer
+    let store: Store
     private let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
 
+    /// The shipped history limit, stated rather than read from the defaults
+    /// of whoever runs the suite.
     init() throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: Item.self, configurations: configuration)
-        store = Store(context: ModelContext(container))
-    }
-
-    private func item(_ content: String) throws -> Item {
-        try #require(store.items.first { $0.content == content })
-    }
-
-    /// A fresh context sees only what actually reached the container, so an
-    /// undo that only fixed the published array cannot pass.
-    private func persistedContents() throws -> [String] {
-        try ModelContext(container).fetch(FetchDescriptor<Item>()).map(\.content)
+        container = try Self.makeContainer()
+        store = Store(
+            context: ModelContext(container), disposableLimit: { HistoryLimit.default.rawValue })
     }
 
     @Test func undoRestoresADeletedRow() throws {

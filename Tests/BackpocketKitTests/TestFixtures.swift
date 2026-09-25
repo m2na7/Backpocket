@@ -1,6 +1,9 @@
 import AppKit
 import Foundation
+import SwiftData
 import Testing
+
+@testable import BackpocketKit
 
 /// Real encoded images, one builder for every suite that needs one. The
 /// store's digest, the favicon sanitizer and the detail card read dimensions
@@ -62,4 +65,33 @@ func withPrivatePasteboard<R>(_ body: (NSPasteboard) throws -> R) rethrows -> R 
     let pasteboard = NSPasteboard(name: .init("backpocket-test-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
     return try body(pasteboard)
+}
+
+/// A suite built on one store over an in-memory container of its own, as
+/// StoreTests, DeletionUndoTests and LinkTests are. swift-testing makes a
+/// fresh suite value for every test, so no two tests ever share the store;
+/// conforming supplies the two ways such a suite reads it back.
+@MainActor
+protocol InMemoryStoreSuite {
+    var container: ModelContainer { get }
+    var store: Store { get }
+}
+
+extension InMemoryStoreSuite {
+    /// For the suite's initializer: nothing else, and no file on disk, can
+    /// reach what the store writes here.
+    static func makeContainer() throws -> ModelContainer {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: Item.self, configurations: configuration)
+    }
+
+    func item(_ content: String) throws -> Item {
+        try #require(store.items.first { $0.content == content })
+    }
+
+    /// A fresh context sees only what actually reached the container, so a
+    /// desync between the published array and the database cannot hide.
+    func persistedContents() throws -> [String] {
+        try ModelContext(container).fetch(FetchDescriptor<Item>()).map(\.content)
+    }
 }

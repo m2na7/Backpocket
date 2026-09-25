@@ -7,18 +7,17 @@ import Testing
 /// Link classification is derived, never stored, so these pin the boundary:
 /// what counts as a link decides what moves into the links section.
 @MainActor
-@Suite struct LinkTests {
-    private let store: Store
+@Suite struct LinkTests: InMemoryStoreSuite {
+    let container: ModelContainer
+    let store: Store
     private let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
 
+    /// The shipped history limit, stated rather than read from the defaults
+    /// of whoever runs the suite.
     init() throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: Item.self, configurations: configuration)
-        store = Store(context: ModelContext(container))
-    }
-
-    private func item(_ content: String) throws -> Item {
-        try #require(store.items.first { $0.content == content })
+        container = try Self.makeContainer()
+        store = Store(
+            context: ModelContext(container), disposableLimit: { HistoryLimit.default.rawValue })
     }
 
     /// Classification reads only the content, so an unsaved Item is the

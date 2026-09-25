@@ -9,9 +9,9 @@ import Testing
 /// test can see it.
 @MainActor
 @Suite
-struct StoreTests {
-    private let store: Store
-    private let container: ModelContainer
+struct StoreTests: InMemoryStoreSuite {
+    let container: ModelContainer
+    let store: Store
     private let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
     private let limit = HistoryLimitBox()
 
@@ -25,20 +25,9 @@ struct StoreTests {
     }
 
     init() throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: Item.self, configurations: configuration)
+        container = try Self.makeContainer()
         let limit = limit
         store = Store(context: ModelContext(container), disposableLimit: { limit.value })
-    }
-
-    private func item(_ content: String) throws -> Item {
-        try #require(store.items.first { $0.content == content })
-    }
-
-    /// A fresh context sees only what actually reached the container, so a
-    /// desync between the published array and the database cannot hide.
-    private func persistedContents() throws -> [String] {
-        try ModelContext(container).fetch(FetchDescriptor<Item>()).map(\.content)
     }
 
     /// `addImage` returns before the row exists — the digest runs off the main
