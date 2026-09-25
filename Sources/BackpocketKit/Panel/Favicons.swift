@@ -199,7 +199,7 @@ final class Favicons {
 
     /// One bounded GET; nil unless the body survives the image sanitizer.
     private nonisolated static func imageData(at url: URL) async -> Data? {
-        guard let data = await body(at: url, cap: maxBytes, accepting: imageMIMETypes) else {
+        guard let data = await body(at: url, cap: maxBytes, accepting: imageMIMETypes)?.body else {
             return nil
         }
         return sanitizedPNG(from: data)
@@ -209,8 +209,7 @@ final class Favicons {
     private nonisolated static func declaredIconURL(under base: URL) async -> URL? {
         guard
             let data = await body(
-                at: base, cap: htmlCap, accepting: ["text/html", "application/xhtml+xml"],
-                resolvedBase: base)
+                at: base, cap: htmlCap, accepting: ["text/html", "application/xhtml+xml"])
         else { return nil }
 
         let html = String(decoding: data.body, as: UTF8.self)
@@ -218,18 +217,12 @@ final class Favicons {
         return iconHref(in: html).flatMap { declaredIcon(href: $0, base: data.page) }
     }
 
-    private nonisolated static func body(
-        at url: URL, cap: Int, accepting types: Set<String>
-    ) async -> Data? {
-        await body(at: url, cap: cap, accepting: types, resolvedBase: nil)?.body
-    }
-
     /// Bounds the read itself rather than the finished body: a hostile server
     /// must not be able to stream for the full resource timeout, so the
     /// transfer is aborted the moment it passes the cap — or immediately, if
     /// it announces a length past it.
     private nonisolated static func body(
-        at url: URL, cap: Int, accepting types: Set<String>, resolvedBase: URL?
+        at url: URL, cap: Int, accepting types: Set<String>
     ) async -> (body: Data, page: URL)? {
         guard let (bytes, response) = try? await session.bytes(from: url, delegate: RedirectGuard())
         else { return nil }
@@ -260,7 +253,7 @@ final class Favicons {
         } catch {
             return nil
         }
-        return (data, response.url ?? resolvedBase ?? url)
+        return (data, response.url ?? url)
     }
 
     /// Whether the headers alone admit the body, before a byte of it is read.
