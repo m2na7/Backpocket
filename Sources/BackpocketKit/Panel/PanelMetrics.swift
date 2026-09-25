@@ -40,6 +40,24 @@ enum PanelMetrics {
         sectionHeader + CGFloat(rows) * rowPitch
     }
 
+    /// The links section's frame inside a column `available` points tall:
+    /// sized to its content up to `linkRows`, and never more than the column
+    /// less a header and one clip row — the clipboard list must always keep a
+    /// row. On a column too short for even that, it bottoms out at one row
+    /// pitch instead of following the column down.
+    static func cappedLinksSectionHeight(
+        linkCount: Int,
+        linkRows: Int,
+        available: CGFloat
+    ) -> CGFloat {
+        let desired =
+            linkCount == 0
+            ? emptyLinksHeight
+            : linksSectionHeight(rows: min(linkCount, linkRows))
+        let ceiling = max(available - sectionHeader - rowPitch - 1, rowPitch)
+        return min(desired, ceiling)
+    }
+
     /// The links row count is a parameter rather than a read of `LinkRows`, so
     /// this stays pure geometry: the height for a given number of rows, which
     /// a caller can ask about without the answer depending on what is stored.

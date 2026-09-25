@@ -97,6 +97,67 @@ struct PanelMetricsTests {
         }
     }
 
+    @Test func withRoomToSpareTheLinksSectionFitsItsContent() {
+        // Sized to the links it holds up to the preferred row count, and
+        // collapsed to its hint line when there are none. The cap below only
+        // ever takes height away from this.
+        let ample: CGFloat = 10_000
+        for rows in LinkRows.range {
+            #expect(
+                PanelMetrics.cappedLinksSectionHeight(
+                    linkCount: 0, linkRows: rows, available: ample)
+                    == PanelMetrics.emptyLinksHeight
+            )
+            for count in 1...12 {
+                #expect(
+                    PanelMetrics.cappedLinksSectionHeight(
+                        linkCount: count, linkRows: rows, available: ample)
+                        == PanelMetrics.linksSectionHeight(rows: min(count, rows))
+                )
+            }
+        }
+    }
+
+    @Test func theLinksSectionLeavesTheClipsListARow() {
+        // The frame is rigid, so on a short panel an uncapped links section
+        // would run past the footer and squeeze the clipboard list to nothing.
+        // A header, one row and the divider between the sections must survive.
+        let clipsFloor = PanelMetrics.sectionHeader + PanelMetrics.rowPitch + 1
+        let shortest = clipsFloor + PanelMetrics.rowPitch
+
+        // The smallest panel the user can drag to is inside that range, so the
+        // promise holds for every frame they can choose.
+        #expect(PanelSize.minHeight - chrome >= shortest)
+
+        for available in stride(from: shortest, through: 600, by: 0.5) {
+            for rows in LinkRows.range {
+                for count in [0, 1, rows, 12] {
+                    let links = PanelMetrics.cappedLinksSectionHeight(
+                        linkCount: count, linkRows: rows, available: available)
+                    #expect(available - links >= clipsFloor)
+                }
+            }
+        }
+    }
+
+    @Test func belowThatTheLinksSectionBottomsOutAtOneRowPitch() {
+        // Too short for both lists, the cap is floored rather than following
+        // the column down, so the rigid frame it sets never reaches zero or
+        // goes negative.
+        let shortest = PanelMetrics.sectionHeader + 2 * PanelMetrics.rowPitch + 1
+        for available in stride(from: 0, to: shortest, by: 0.5) {
+            for rows in LinkRows.range {
+                for count in [0, 1, rows, 12] {
+                    #expect(
+                        PanelMetrics.cappedLinksSectionHeight(
+                            linkCount: count, linkRows: rows, available: available)
+                            == PanelMetrics.rowPitch
+                    )
+                }
+            }
+        }
+    }
+
     @Test func theColumnFloorsBothFitInsideTheMinimumWidth() {
         // Two usable columns at the narrowest allowed panel is the promise;
         // floors that summed past the minimum would clip one of them.

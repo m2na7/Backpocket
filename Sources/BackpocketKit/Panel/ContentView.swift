@@ -444,26 +444,19 @@ struct ContentView: View {
                 // the height that actually exists: the frame is rigid, so at a
                 // short panel it would otherwise run past the footer and leave
                 // the clipboard list with no room at all.
-                .frame(height: linksSectionHeight(in: height))
+                //
+                // `LinkRows` is read live on every layout pass, not
+                // snapshotted: it only sizes this section, so nothing the user
+                // is aiming at moves.
+                .frame(
+                    height: PanelMetrics.cappedLinksSectionHeight(
+                        linkCount: contents.links.count,
+                        linkRows: LinkRows.current,
+                        available: height
+                    )
+                )
             }
         }
-    }
-
-    /// Never more than the reader's height less a header and one clip row —
-    /// the clipboard list must always keep a row.
-    ///
-    /// `LinkRows` is read live on every layout pass, not snapshotted: it only
-    /// sizes this section, so nothing the user is aiming at moves.
-    private func linksSectionHeight(in available: CGFloat) -> CGFloat {
-        let desired =
-            contents.links.isEmpty
-            ? PanelMetrics.emptyLinksHeight
-            : PanelMetrics.linksSectionHeight(rows: min(contents.links.count, LinkRows.current))
-        let ceiling = max(
-            available - PanelMetrics.sectionHeader - PanelMetrics.rowPitch - 1,
-            PanelMetrics.rowPitch
-        )
-        return min(desired, ceiling)
     }
 
     // MARK: Right — notes, time-grouped
