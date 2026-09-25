@@ -53,16 +53,27 @@ if [ "${BACKPOCKET_UNIVERSAL:-0}" = "1" ]; then
   ARCH_FLAGS=(--arch arm64 --arch x86_64)
 fi
 
+# The App Store build resolves a package graph without Sparkle and compiles
+# with a define the direct build lacks. Sharing .build, each switch between
+# the two prunes Sparkle's binary artifact (so the next direct build has to
+# fetch and unpack it again, from SwiftPM's cache or, when that is cold, the
+# network) and recompiles everything under the other flag. A tree of its own
+# keeps both builds incremental.
+SCRATCH=()
+if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  SCRATCH=(--scratch-path .build/mas)
+fi
+
 # Sparkle links as @rpath/Sparkle.framework/..., and SwiftPM only emits an
 # @loader_path rpath — enough while the binary sits beside the framework in
 # .build, useless once it moves into a bundle. Without this the app dies at
 # launch with a dyld "Library not loaded" and no other clue.
 LINK_FLAGS=(-Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --product Backpocket
+swift build -c "$CONFIG" "${SCRATCH[@]}" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --product Backpocket
 # With --arch flags the bin path moves to .build/apple/Products; asking
 # swift build keeps this script agnostic to that layout.
-BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --show-bin-path)"
+BIN_DIR="$(swift build -c "$CONFIG" "${SCRATCH[@]}" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --show-bin-path)"
 BIN="$BIN_DIR/Backpocket"
 
 # The dSYM goes too, not just the bundle: a leftover one from an earlier

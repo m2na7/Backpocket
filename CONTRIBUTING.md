@@ -48,6 +48,8 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 |---|---|
 | `make build` | `swift build` |
 | `make test` | `swift test` |
+| `make build-mas` | build the App Store variant, in `.build/mas` |
+| `make test-mas` | test the App Store variant, in `.build/mas` |
 | `make coverage` | line coverage per file, worst first (reported, never gated) |
 | `make mutants` | whether the tests would catch a bug, not just run the line |
 | `make race` | the suite under ThreadSanitizer |
