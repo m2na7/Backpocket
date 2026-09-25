@@ -411,7 +411,10 @@ English, it renders as the raw identifier.
 - `Store` takes a `ModelContext`; tests hand it an in-memory
   `ModelContainer`. It also takes `disposableLimit` as a closure rather than a
   number, so a history-limit change in Settings applies to the very next copy
-  instead of to the next launch.
+  instead of to the next launch. A failed save needs no seam of its own: a
+  store file opened a second time with `allowsSave: false` throws on every
+  save before anything reaches the file, which is how `StoreTests` and
+  `ImageBytesTests` reach the rollback path.
 - **Preferences are injected with a task-local, not a settable global.**
   `PreferenceStore.withDefaults(_:_:)` binds a throwaway `UserDefaults` for
   the duration of a body. The distinction is the whole point: swift-testing
@@ -440,7 +443,7 @@ English, it renders as the raw identifier.
   has to stay one. What made `MigrationTests` serializable was tests *writing*
   it as a side effect of opening a container; the test entry point now returns
   that value instead of assigning it. `setUsingFallbackStoreForTesting`
-  remains for three `StoreTests`, and is safe only because every suite that
+  remains for two `StoreTests`, and is safe only because every suite that
   touches it is `@MainActor` with synchronous bodies, which cannot interleave.
   Put an `await` inside one of those bodies and the window opens — at which
   point the flag should be injected into `Store.init` the way the history

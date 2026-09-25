@@ -38,7 +38,7 @@ struct StoreTests: InMemoryStoreSuite {
 
     /// `addImage` returns before the row exists — the digest runs off the main
     /// actor — so every image assertion below waits for the capture chain
-    /// first. Suspending here is safe for the three tests that flip
+    /// first. Suspending here is safe for the two tests that flip
     /// `setUsingFallbackStoreForTesting`: their bodies are synchronous and
     /// restore the flag through `defer` without ever yielding the main actor,
     /// so a test parked on this await can only ever resume to see it back off.
@@ -665,17 +665,100 @@ struct StoreTests: InMemoryStoreSuite {
         #expect(!fallback.hasStorageFailure)
     }
 
+    // A save that fails. What the user is told afterwards is decided in the
+    // rollback path every write shares, and nothing else reaches it.
+    //
+    // Part of what that path promises does not hold, and is marked as a known
+    // issue below rather than left untested: after the failed save,
+    // `context.rollback()` hands back the rows as the failed save left them,
+    // not as the file still has them. SwiftData keeps a failed save's deletes
+    // and edits through the rollback, so the refetch in `Store.write` sees
+    // them too, while a fresh context reads the file as it was. What does
+    // hold, the failure reported and the file untouched, is asserted plainly.
+    // Once the list comes back right these known issues stop being recorded,
+    // and the tests fail until the markers go.
+
+    /// Runs `body` against a store whose every save throws, over a file that
+    /// already holds whatever `seed` wrote. The file is opened a second time
+    /// with saving refused, the one way a test can make a real save fail, and
+    /// the refusal comes before anything reaches the file: `persisted`, a
+    /// fresh read of it, returns exactly what `seed` left there.
+    private func withFailingStore(
+        seed: (Store) -> Void,
+        _ body: (_ failing: Store, _ persisted: () throws -> [String]) throws -> Void
+    ) throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "backpocket-failing-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Backpocket.store")
+
+        let writable = try ModelContainer(
+            for: Item.self, configurations: ModelConfiguration(url: url))
+        seed(
+            Store(
+                context: ModelContext(writable), disposableLimit: { HistoryLimit.default.rawValue })
+        )
+
+        let readOnly = try ModelContainer(
+            for: Item.self, configurations: ModelConfiguration(url: url, allowsSave: false))
+        let failing = Store(
+            context: ModelContext(readOnly), disposableLimit: { HistoryLimit.default.rawValue })
+        try body(failing) {
+            try ModelContext(readOnly).fetch(FetchDescriptor<Item>()).map(\.content)
+        }
+    }
+
     @Test func aFailedWriteLeavesTheListAndTheDatabaseAgreeing() throws {
-        store.add("kept", source: source)
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.clearHistory()
 
-        // The rollback path's whole purpose: whatever `items` publishes after
-        // a write must be what a fresh read of the database returns. A
-        // "Clear history" that reports success and hands every row back at
-        // the next launch is worse than the failure itself.
-        store.clearHistory()
+            // The flag is what tells the user; the file never changed.
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
 
-        #expect(store.items.map(\.content) == (try persistedContents()))
-        #expect(!store.hasStorageFailure)
+            // The rollback path's whole purpose: whatever `items` publishes
+            // after a write must be what a fresh read of the database
+            // returns. A "Clear history" that reports success and hands every
+            // row back at the next launch is worse than the failure itself.
+            withKnownIssue("SwiftData keeps a failed save's deletes through rollback()") {
+                #expect(failing.items.map(\.content) == rows)
+            }
+        }
+    }
+
+    @Test func anEditThatFailsToSaveIsReportedAsNotApplied() throws {
+        try withFailingStore(seed: { $0.add("before", source: source) }) { failing, persisted in
+            let clip = try #require(failing.items.first)
+
+            // False keeps the editor open with the user's text; true would
+            // close it over an edit that is gone at the next launch.
+            #expect(failing.update(clip, content: "after") == false)
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["before"])
+
+            withKnownIssue("SwiftData keeps a failed save's edits through rollback()") {
+                #expect(failing.items.map(\.content) == rows)
+            }
+        }
+    }
+
+    @Test func aDeleteThatFailsToSaveKeepsTheRowListed() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.delete(try #require(failing.items.first))
+
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
+
+            // Still in the file, so it belongs in the list: a row the panel
+            // dropped would come back unannounced at the next launch.
+            withKnownIssue("SwiftData keeps a failed save's deletes through rollback()") {
+                #expect(failing.items.map(\.content) == rows)
+            }
+        }
     }
 
     @Test func aHealthyStoreNeverReportsAStorageFailure() throws {
