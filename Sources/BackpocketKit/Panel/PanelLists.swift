@@ -60,14 +60,13 @@ struct PanelLists {
         lists.notes = matching(items.filter(\.isNote))
 
         // The store hands notes over already ordered, so equal groups arrive
-        // adjacent and a run-merger is enough — no bucketing pass.
+        // adjacent and a run-merger is enough — no bucketing pass. One clock
+        // for the whole list, so the date math is done once and each day is
+        // formatted once rather than once per note.
+        var clock = NoteClock(now: now)
         for item in lists.notes {
-            let group =
-                item.isPinned ? NoteGroup.pinned : NoteGroup.group(for: item.usedAt, now: now)
-            let row = NoteRowData(
-                item: item,
-                timeLabel: NoteGroup.rowLabel(for: item.usedAt, now: now)
-            )
+            let group = item.isPinned ? NoteGroup.pinned : clock.group(for: item.usedAt)
+            let row = NoteRowData(item: item, timeLabel: clock.rowLabel(for: item.usedAt))
             if lists.noteSections.last?.group == group {
                 lists.noteSections[lists.noteSections.count - 1].rows.append(row)
             } else {

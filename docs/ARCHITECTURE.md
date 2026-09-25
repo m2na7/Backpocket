@@ -187,7 +187,9 @@ a bug in this document.
   is passed in (`ContentView.column`, `HoverMachine.Entry`) rather than
   worked out from what the row holds.
 - `NoteGrouping` — the Apple Notes-style recency buckets (`NoteGroup`) the
-  notes column is grouped by, keyed off `usedAt`.
+  notes column is grouped by, keyed off `usedAt`. A whole list is placed
+  through one `NoteClock`, which works the windows out once and formats each
+  day once: the notes list is unbounded and is relabelled on every keystroke.
 - `RowChrome` — small shared row furniture: the pick-order `StackBadge`, the
   `⌘`-slot `ShortcutChip`, the `RowHighlight` both row types draw, and
   search-match emphasis.

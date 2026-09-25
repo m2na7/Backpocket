@@ -1,7 +1,8 @@
 import Foundation
 
 /// The Apple Notes-style recency buckets the notes column is grouped by:
-/// 오늘 / 지난 7일 / 이전 30일 / current-year months / year+month beyond.
+/// Today / Last 7 Days / Previous 30 Days / current-year months /
+/// year+month beyond.
 /// Grouping keys off usedAt — the sort key — so buckets stay contiguous in
 /// the already-sorted list and never interleave.
 enum NoteGroup: Equatable {
@@ -11,8 +12,8 @@ enum NoteGroup: Equatable {
     case today
     case last7Days
     case last30Days
-    /// Preformatted, localized: "7월" within the current year, "2025년 12월"
-    /// for earlier years.
+    /// Preformatted, localized: "July" within the current year,
+    /// "December 2025" for earlier years.
     case month(String)
 
     /// A stable identity for list diffing.
@@ -28,6 +29,8 @@ enum NoteGroup: Equatable {
 
     /// now/calendar/locale are injectable so tests can pin a reference date
     /// instead of flaking at midnight and month boundaries.
+    ///
+    /// One note at a time; a whole list goes through a shared `NoteClock`.
     @MainActor
     static func group(
         for date: Date,
@@ -35,27 +38,8 @@ enum NoteGroup: Equatable {
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> NoteGroup {
-        // A clock correction can leave a stamp in the future, which matches no
-        // window below and would open a second section carrying the same id as
-        // the first. The nearest truthful bucket is today's.
-        if date >= now || calendar.isDate(date, inSameDayAs: now) { return .today }
-
-        let startOfToday = calendar.startOfDay(for: now)
-        if let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday),
-            date >= weekAgo
-        {
-            return .last7Days
-        }
-        if let monthAgo = calendar.date(byAdding: .day, value: -30, to: startOfToday),
-            date >= monthAgo
-        {
-            return .last30Days
-        }
-
-        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        let formatter = DateFormatters.templated(
-            sameYear ? "MMMM" : "yMMMM", calendar: calendar, locale: locale)
-        return .month(formatter.string(from: date))
+        var clock = NoteClock(now: now, calendar: calendar, locale: locale)
+        return clock.group(for: date)
     }
 
     /// Row timestamps mirror the buckets, the way the Notes app labels rows:
@@ -67,20 +51,145 @@ enum NoteGroup: Equatable {
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> String {
-        let formatter: DateFormatter
-        if calendar.isDate(date, inSameDayAs: now) {
-            formatter = DateFormatters.timeOnly(calendar: calendar, locale: locale)
-        } else if let weekAgo = calendar.date(
-            byAdding: .day, value: -7, to: calendar.startOfDay(for: now)),
-            date >= weekAgo
-        {
-            formatter = DateFormatters.templated("EEEE", calendar: calendar, locale: locale)
-        } else if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
-            formatter = DateFormatters.templated("MMMd", calendar: calendar, locale: locale)
-        } else {
-            formatter = DateFormatters.shortDate(calendar: calendar, locale: locale)
+        var clock = NoteClock(now: now, calendar: calendar, locale: locale)
+        return clock.rowLabel(for: date)
+    }
+}
+
+/// Everything bucketing and labelling a note needs to know about `now`,
+/// worked out once for a whole list instead of once per note.
+///
+/// The notes list is unbounded, and every recompute used to redo the same
+/// calendar arithmetic for each note — the start of today, the 7- and 30-day
+/// windows, the current year — and look its formatter up by a freshly built
+/// key, twice. Here the windows are fixed once and a note is placed by
+/// comparing dates. What is formatted for a day is kept while the next note
+/// falls on that same day, and the store hands notes over sorted, so a busy
+/// day formats once.
+///
+/// The day is the unit of reuse, not the month or the year, because it is
+/// the only one that never straddles a change of era: a month label cached
+/// across one would carry the old era's year into the new one.
+@MainActor
+struct NoteClock {
+    private let now: Date
+    private let calendar: Calendar
+    private let locale: Locale
+    private let startOfToday: Date
+    private let startOfTomorrow: Date
+    private let weekAgo: Date?
+    private let monthAgo: Date?
+    private let year: Int
+
+    private var formatters: [Style: DateFormatter] = [:]
+    private var day = Day()
+
+    init(now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) {
+        self.now = now
+        self.calendar = calendar
+        self.locale = locale
+        startOfToday = calendar.startOfDay(for: now)
+        // A calendar that cannot say where today ends has never been seen;
+        // treating everything after its start as today is the least wrong.
+        startOfTomorrow = calendar.dateInterval(of: .day, for: now)?.end ?? .distantFuture
+        // Counted back from the start of today, not from now, so each window
+        // is a whole number of days whatever the hour — and computed from it
+        // rather than as 7 × 86,400 seconds, so a DST change inside the window
+        // still lands the boundary on a midnight.
+        weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday)
+        monthAgo = calendar.date(byAdding: .day, value: -30, to: startOfToday)
+        year = calendar.component(.year, from: now)
+    }
+
+    mutating func group(for date: Date) -> NoteGroup {
+        // A clock correction can leave a stamp in the future, which matches no
+        // window below and would open a second section carrying the same id as
+        // the first. The nearest truthful bucket is today's.
+        if date >= now || isToday(date) { return .today }
+        if let weekAgo, date >= weekAgo { return .last7Days }
+        if let monthAgo, date >= monthAgo { return .last30Days }
+        return .month(label(date, isThisYear(date) ? .month : .yearMonth))
+    }
+
+    /// A stamp later than today still gets a weekday rather than a date: it is
+    /// past the week window's start, which is all that test asks.
+    mutating func rowLabel(for date: Date) -> String {
+        // The one label finer than a day, so the one that is never reused.
+        if isToday(date) { return formatter(.time).string(from: date) }
+        if let weekAgo, date >= weekAgo { return label(date, .weekday) }
+        return label(date, isThisYear(date) ? .monthDay : .shortDate)
+    }
+
+    /// Half-open on purpose: `DateInterval.contains` counts its end, and the
+    /// end of today is the first instant of tomorrow.
+    private func isToday(_ date: Date) -> Bool {
+        startOfToday <= date && date < startOfTomorrow
+    }
+
+    /// Compared by the year component rather than by an interval: that is
+    /// the question the labels have always asked, and under an era-based
+    /// calendar the two answers differ.
+    private mutating func isThisYear(_ date: Date) -> Bool {
+        moveDay(to: date)
+        return day.isThisYear
+    }
+
+    /// Only for the styles that print nothing finer than the day, which is
+    /// what makes reusing a label across the day exact.
+    private mutating func label(_ date: Date, _ style: Style) -> String {
+        moveDay(to: date)
+        if let label = day.labels[style] { return label }
+        let label = formatter(style).string(from: date)
+        day.labels[style] = label
+        return label
+    }
+
+    private mutating func moveDay(to date: Date) {
+        guard !day.contains(date) else { return }
+        day = Day(
+            interval: calendar.dateInterval(of: .day, for: date),
+            isThisYear: calendar.component(.year, from: date) == year
+        )
+    }
+
+    private mutating func formatter(_ style: Style) -> DateFormatter {
+        if let formatter = formatters[style] { return formatter }
+        let formatter =
+            switch style {
+            case .time: DateFormatters.timeOnly(calendar: calendar, locale: locale)
+            case .weekday: DateFormatters.templated("EEEE", calendar: calendar, locale: locale)
+            case .monthDay: DateFormatters.templated("MMMd", calendar: calendar, locale: locale)
+            case .shortDate: DateFormatters.shortDate(calendar: calendar, locale: locale)
+            case .month: DateFormatters.templated("MMMM", calendar: calendar, locale: locale)
+            case .yearMonth:
+                DateFormatters.templated("yMMMM", calendar: calendar, locale: locale)
+            }
+        formatters[style] = formatter
+        return formatter
+    }
+
+    private enum Style {
+        case time
+        case weekday
+        case monthDay
+        case shortDate
+        case month
+        case yearMonth
+    }
+
+    /// The calendar day of the last note placed, and what has been worked
+    /// out for it so far.
+    private struct Day {
+        /// Nil until a note is placed, and should the calendar ever fail to
+        /// answer — either way nothing is reused.
+        var interval: DateInterval?
+        var isThisYear = false
+        var labels: [Style: String] = [:]
+
+        func contains(_ date: Date) -> Bool {
+            guard let interval else { return false }
+            return interval.start <= date && date < interval.end
         }
-        return formatter.string(from: date)
     }
 }
 
