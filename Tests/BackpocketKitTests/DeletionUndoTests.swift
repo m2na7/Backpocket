@@ -68,6 +68,54 @@ struct DeletionUndoTests: InMemoryStoreSuite {
         #expect(store.items.map(\.content) == ["old clip", "newer clip"])
     }
 
+    /// `Snapshot` promises to hold every stored attribute of `Item`: a field
+    /// added to the model and forgotten there comes back blank from an undo.
+    /// Read from the live schema, through the `Item` typealias rather than a
+    /// named version, so the check moves with the model when a new one lands.
+    @Test func theSnapshotHoldsEveryStoredAttribute() throws {
+        let snapshot = DeletionUndo.Snapshot(Item(content: "x"))
+        let entity = try #require(Schema([Item.self]).entities.first)
+
+        #expect(Set(fields(of: snapshot).keys) == Set(entity.attributes.map(\.name)))
+    }
+
+    /// Every attribute, back as it was. Holding them all is half of it; the
+    /// other half is `restored()` writing each one back, which the compiler
+    /// cannot check for fields `Item.init` does not take.
+    ///
+    /// Comparing the rows before and after only catches a field that is not
+    /// written back if the field held something a fresh row would not. So
+    /// the rows here, an image that also carries rich text and a note, give
+    /// every attribute such a value, and the first expectation holds them to
+    /// it: a field added to the model fails here until it is given one.
+    @Test func undoGivesBackEveryAttribute() async throws {
+        store.addImage(try Fixture.png(width: 4, height: 3), source: source)
+        await store.imageCapturesDidFinish()
+        let image = try #require(store.items.first { $0.isImage })
+        image.createdAt = Date(timeIntervalSinceNow: -86_400)
+        image.usedAt = Date(timeIntervalSinceNow: -3_600)
+        image.contentHTML = "<img>"
+        image.contentRTF = Data([0x7B])
+        image.isFileCopy = true
+        store.togglePin(image)
+        store.addNote("kept thought")
+        let note = try item("kept thought")
+
+        let before = [image, note].map { fields(of: DeletionUndo.Snapshot($0)) }
+        let fresh = fields(of: DeletionUndo.Snapshot(Item(content: "x")))
+        for name in fresh.keys {
+            #expect(before.contains { $0[name] != fresh[name] }, "no row here sets \(name)")
+        }
+
+        store.delete([image, note])
+        #expect(store.undoDelete())
+
+        let restored = try [#require(store.items.first { $0.isImage }), item("kept thought")]
+        #expect(restored.map { fields(of: DeletionUndo.Snapshot($0)) } == before)
+        #expect(restored.first?.isImage == true)
+        #expect(try persistedContents().count == 2)
+    }
+
     @Test func undoRestoresANoteAsANote() throws {
         store.addNote("kept thought")
 
@@ -170,6 +218,27 @@ struct DeletionUndoTests: InMemoryStoreSuite {
         #expect(!undo.canUndo(asOf: deletedAt))
     }
 
+    /// Store bumps `revision` for a sweep only when it dropped something,
+    /// so that views refilter when an offered undo goes away and not on every
+    /// timer that finds nothing to do. This answer is what decides it.
+    @Test func aSweepReportsWhetherItDroppedAnything() {
+        var undo = DeletionUndo()
+        let deletedAt = ContinuousClock.now
+
+        let emptySweep = undo.forgetExpired(asOf: deletedAt)
+        #expect(!emptySweep)
+
+        undo.record([Item(content: "gone")], at: deletedAt)
+        let earlySweep = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window - .seconds(1))
+        #expect(!earlySweep)
+
+        let dueSweep = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window + .seconds(1))
+        #expect(dueSweep)
+
+        let repeatSweep = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window + .seconds(1))
+        #expect(!repeatSweep)
+    }
+
     @Test func anExpiredDeleteDoesNotHandOutTheOneBehindIt() {
         var undo = DeletionUndo()
         let start = ContinuousClock.now
@@ -181,5 +250,20 @@ struct DeletionUndoTests: InMemoryStoreSuite {
         let restorable = undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1))
         #expect(restorable?.map(\.content) == ["second"])
         #expect(undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1)) == nil)
+    }
+
+    /// A snapshot's fields by name, as text that tells two values apart:
+    /// `Data` spelled out in full rather than as its byte count, and a date
+    /// to the fraction of a second rather than to the second.
+    private func fields(of snapshot: DeletionUndo.Snapshot) -> [String: String] {
+        var fields: [String: String] = [:]
+        for case (let name?, let value) in Mirror(reflecting: snapshot).children {
+            switch value {
+            case let data as Data: fields[name] = data.base64EncodedString()
+            case let date as Date: fields[name] = "\(date.timeIntervalSinceReferenceDate)"
+            default: fields[name] = String(reflecting: value)
+            }
+        }
+        return fields
     }
 }
