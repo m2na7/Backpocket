@@ -253,6 +253,11 @@ final class DetailPanel {
         pointerWatch = nil
         shownItem = nil
         panel?.orderOut(nil)
+        // The hosting view holds the card's content, which for an image is a
+        // bitmap decoded to the card's size — several megabytes that would
+        // otherwise stay resident until the next card, however long the app
+        // sits idle. show() always installs a fresh one, so nothing is lost.
+        panel?.contentView = nil
     }
 
     /// Keeps the card open while the mouse is moving onto it. The card never
