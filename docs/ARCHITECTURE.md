@@ -130,6 +130,11 @@ a bug in this document.
   next, over the three lists reduced to identifiers. Taking rows stripped of
   everything else is what keeps the rules testable without a store, a query,
   or a view.
+- `PanelTargeting` — which row an action aims at and which row may grow a
+  preview card. The row the user sees highlighted wins, so a hovered row beats
+  the focused pane's remembered selection; and a selection that only followed
+  typing or the panel opening never grows a card. Both rules were computed
+  properties on `ContentView`, and both have sent an action to the wrong row.
 - `SplitDrag` — the notes column's share of the panel width, and the
   arithmetic of dragging the divider. Stored as a fraction so the split
   survives a resize but rendered in points with a floor under each column, so
@@ -141,9 +146,22 @@ a bug in this document.
   body was O(stack × items) on every render.
 - `DetailPanel` — the hover preview card, a child window that is never made
   key (a SwiftUI popover would grab focus and misfire the panel's auto-close).
+- `DetailPlacement` — which side of the panel the card takes, how large it
+  may grow there, and where it lands, as arithmetic over two rectangles. Every
+  one of those rules used to be reachable only by dragging the panel to the
+  edge of a second display. Defined in `DetailPanel`.
+- `DetailContent` — the card's body and metadata footer, measured unscrolled
+  so the card can size itself to it. Its `measured` twin drops the syntax
+  coloring, which makes sizing a long clip dozens of times cheaper and is sound
+  only while the coloring moves no glyphs; its suite pins that for every
+  language. Defined in `DetailPanel`.
 - `EditPanel` — the note editor; non-activating like the main panel, but it
   does take key focus, so `AppDelegate` suspends the main panel's auto-hide
   while it is open.
+- `EditorActions` — what the editor's buttons do when the store may refuse
+  the write: paste only a save that landed, and tell an item that is gone
+  apart from a store that cannot write, so the editor stays up with the
+  user's text in it rather than closing as if it had saved.
 - `PanelEventMonitors` — the panel's two `NSEvent` local monitors (the ⌘
   watch, the pointer-travel watch) and their add/remove pairing, which is the
   part that goes wrong: a monitor installed twice handles every event twice,
@@ -190,12 +208,20 @@ a bug in this document.
   defined in `ItemRow`.
 - `AppIcon` — per-bundle-ID and per-file-path icon caches (`NSWorkspace`
   lookups are too slow to repeat on every row render).
+- `BoundedCache` — the ceilinged dictionary behind the `FileClip`,
+  `Thumbnail` and `AppIcon` caches, which live as long as the panel does.
+  Reaching the ceiling drops everything rather than evicting one entry: every
+  value re-derives lazily from what the row already holds, so a wholesale
+  flush is a cheaper miss than tracking recency.
 - `Favicons` — the panel's one network-capable component: link-icon fetching
   (on by default, switchable off in Settings), over HTTPS to public hosts only
   — the link's host and its parent domain, plus whatever public host a
   declared icon or a redirect names (every hop checked, the chain capped) —
   backed by a size- and age-bounded on-disk cache that also remembers misses
-  so a dead host isn't reprobed every launch.
+  so a dead host isn't reprobed every launch. `RedirectGuard` (the per-hop
+  vetting), `FetchLimiter` (three hosts at once) and `FetchWaiters` (which
+  waiter may cancel a shared download) are defined beside it as types of
+  their own so the tests can reach them directly.
 
 ### `Settings`
 
@@ -228,6 +254,21 @@ a bug in this document.
   `LSUIElement` app it would otherwise open behind everything.
 - `GeneralPane`, `ShortcutsPane`, `HistoryPane`, `IgnorePane`, `DataPane` —
   the five tabs, in `SettingsView`.
+- `GlobalShortcutChange` (with `HotKeyStatus`) — the global-shortcut
+  recorder's rollback ladder as a value: which of five outcomes a recorded
+  combination reaches, down to the rollback failing on top of a failed
+  switch, which leaves no working shortcut. Persisting and registering stay
+  with the caller, the same split `PasteFlavor` uses.
+- `ShortcutRecorder` — which keystrokes cancel an armed recorder. Its event
+  monitor swallows every key, so a mistake here is a recorder the user cannot
+  get out of, or a combination they cannot record.
+- `HotKeyControl` — the three hotkey operations Settings needs, supplied by
+  the composition root, so the dependency runs one way instead of a view
+  reaching for `AppDelegate.shared`.
+- `LaunchAtLogin` — which `SMAppService` statuses count as on, what the switch
+  shows between the click and the answer, and where a refusal leaves the row.
+  The service answers truthfully only in a real login session, so the
+  decisions are a value and the two registration calls stay in the view.
 
 ### `Text`
 
