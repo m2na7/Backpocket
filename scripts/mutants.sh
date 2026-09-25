@@ -22,9 +22,12 @@
 # sampled.
 #
 # Do not try to split that pass across parallel checkouts. Two copies of the
-# suite fail each other — the language tests write the process-wide
-# AppleLanguages domain — so every mutation looks caught and the pass reports
-# 100% off a red baseline, the worst output this tool can produce.
+# suite fail each other — withScratchPreferences names each test's defaults
+# suite after its call site, and those suites live in the user's Preferences,
+# shared by every process — so every mutation looks caught and the pass
+# reports 100% off a red baseline, the worst output this tool can produce. The
+# baseline run below refuses a suite that is red before the first mutation; it
+# cannot see one that another checkout turns red halfway through.
 #
 # A surviving mutant is not automatically a gap — an EQUIVALENT mutant changes
 # no behaviour and no test can ever kill it. Read the survivor before writing
@@ -85,8 +88,10 @@ sites() {  # file, grep pattern
 # never returns has not passed, so a timeout counts as caught.
 TEST_TIMEOUT=${MUTANTS_TEST_TIMEOUT:-120}
 
+# --skip-build: every caller has just run `swift build --build-tests`, and a
+# second build plan per mutation is pure overhead across hundreds of them.
 run_tests() {
-  swift test >/dev/null 2>&1 &
+  swift test --skip-build >/dev/null 2>&1 &
   local pid=$! waited=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$waited" -ge "$TEST_TIMEOUT" ]; then
@@ -122,8 +127,22 @@ try() {  # file, line, sed expression, label
   git checkout -- "$file"
 }
 
+# Checked before the baseline, so a mistyped path fails in a second rather
+# than after a full build and test run.
 for file in "${FILES[@]}"; do
   [ -f "$file" ] || { echo "mutants: no such file: $file" >&2; exit 1; }
+done
+
+# A mutation counts as caught when the suite fails, so a suite that already
+# fails unmutated makes every mutation look caught and reports a perfect score
+# for tests that checked nothing.
+echo "baseline: the unmutated suite"
+if ! swift build --build-tests >/dev/null 2>&1 || ! run_tests; then
+  echo "mutants: the suite is red before any mutation; a score would be meaningless" >&2
+  exit 1
+fi
+
+for file in "${FILES[@]}"; do
   echo "$file"
   # Boundaries first: nearly every survivor found so far has been a cap
   # exercised well inside its range and never at the edge.
