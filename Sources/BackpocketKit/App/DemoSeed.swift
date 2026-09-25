@@ -133,9 +133,13 @@ enum DemoSeed {
             } else {
                 item.usedAt = clipDate
                 clipDate -= clipGap
-                // Widening, but capped well inside the seven-day default so
-                // nothing in the demo is eligible for expiry.
-                clipGap = min(clipGap * 1.6, 86400 * 0.9)
+                // Widening, but capped so the whole spread, not just each
+                // gap, stays inside the seven-day default and nothing in the
+                // demo is eligible for expiry. At 0.9 days the gaps summed to
+                // about 7.3 and the oldest clip was purged on the first open;
+                // at 0.75 the oldest sits near 6.4. DemoSeedTests holds it
+                // there as clips are added.
+                clipGap = min(clipGap * 1.6, 86400 * 0.75)
             }
             item.createdAt = item.usedAt
         }
