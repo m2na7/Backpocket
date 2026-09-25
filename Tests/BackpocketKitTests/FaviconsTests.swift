@@ -286,8 +286,8 @@ private func tiffData(side: Int) throws -> Data {
     }
 
     /// "At most three hosts at once" is a promise about what this app does to
-    /// a network — a whole list scrolling into view would otherwise start
-    /// three requests per visible row.
+    /// a network — a whole list scrolling into view would otherwise start a
+    /// download, of up to four requests, for every visible row at once.
     @Test func theFetchLimiterNeverRunsMoreThanItsLimitAtOnce() async {
         let limiter = FetchLimiter(limit: 3)
         let tracker = ConcurrencyPeak()
@@ -447,24 +447,59 @@ struct FaviconFetchingTests {
         try await withFetching(false) { #expect(!FaviconFetching.isEnabled) }
     }
 
+    /// Runs `body` with every request a lookup makes written down and left
+    /// unanswered, instead of sent: a test that expects no request can say
+    /// so, and a regression that made one costs no real traffic. Returns the
+    /// URLs asked for, in order.
+    private func requests(during body: () async throws -> Void) async rethrows -> [String] {
+        let log = NetworkLog()
+        try await FaviconNetworkOverride.$respond.withValue({ url in
+            await log.record(url.absoluteString)
+            return nil
+        }) {
+            try await body()
+        }
+        return await log.entries
+    }
+
     @Test func withTheSettingOffALookupIsInertForEveryHost() async throws {
         try await withFetching(false) {
-            // The gate is checked before the host rules, the memory cache and
-            // the disk cache, so turning the setting back off makes the
-            // feature inert rather than merely quiet — nothing an earlier
-            // opt-in left on disk is read.
-            let url = URL(string: "https://github.com/m2na7/backpocket")!
-            #expect(await Favicons.shared.icon(for: url) == nil)
+            try await withTemporaryCache { _ in
+                // The gate is checked before the host rules, the memory cache
+                // and the disk cache, so turning the setting back off makes
+                // the feature inert rather than merely quiet — nothing an
+                // earlier opt-in left on disk is read. This is such an icon.
+                let icon = try Fixture.png(width: 16, height: 16)
+                try icon.write(to: Favicons.cacheFile(for: "github.com"))
+
+                let url = URL(string: "https://github.com/m2na7/backpocket")!
+                let asked = await requests {
+                    #expect(await Favicons.shared.icon(for: url) == nil)
+                }
+                #expect(asked.isEmpty)
+            }
         }
     }
 
     @Test func withTheSettingOnAnUnfetchableHostStillNeverStartsALookup() async throws {
         try await withFetching(true) {
-            // The host rules are the second gate. A LAN address must not be
-            // contacted even by a user who opted in.
-            #expect(await Favicons.shared.icon(for: URL(string: "https://192.168.0.5/")!) == nil)
-            #expect(await Favicons.shared.icon(for: URL(string: "https://localhost/")!) == nil)
-            #expect(await Favicons.shared.icon(for: URL(string: "https://secret.onion/")!) == nil)
+            // An empty temporary cache, not the real one. There, a lookup
+            // that slipped past a broken host rule would find the miss
+            // marker an earlier such run had left and return before asking
+            // anything, so this could not fail; and the first such run would
+            // write those markers into the user's own cache.
+            try await withTemporaryCache { _ in
+                // The host rules are the second gate. A LAN address must not
+                // be contacted even by a user who opted in, so what counts is
+                // that nothing was asked, not only that nothing came back.
+                let asked = await requests {
+                    for host in ["192.168.0.5", "localhost", "secret.onion"] {
+                        let url = URL(string: "https://\(host)/")!
+                        #expect(await Favicons.shared.icon(for: url) == nil)
+                    }
+                }
+                #expect(asked.isEmpty)
+            }
         }
     }
 
@@ -534,9 +569,9 @@ struct FaviconFetchingTests {
     }
 
     @Test func adeadHostIsRememberedAsDeadRatherThanReProbed() async throws {
-        // Three requests per launch per dead host is the cost of getting this
-        // backwards, and the other direction is worse: read the absence of a
-        // marker as a recorded failure and no host is ever fetched at all.
+        // Up to four requests per launch per dead host is the cost of getting
+        // this backwards, and the other direction is worse: read the absence
+        // of a marker as a recorded failure and no host is ever fetched at all.
         try await withTemporaryCache { directory in
             #expect(await Favicons.diskEntry(host: "never-seen.example") == nil)
 
@@ -581,15 +616,75 @@ struct FaviconFetchingTests {
         }
     }
 
+    /// Settings and "Reset everything" both call this; a cache that survived
+    /// would keep serving icons from hosts the user just wiped. That means
+    /// memory as well as disk: the icons already shown and the hosts already
+    /// written off have to go too, and the disk half is pinned above.
     @Test func clearingLeavesNothingBehind() async throws {
-        // Settings and "Reset everything" both call this; a cache that
-        // survived would keep serving icons from hosts the user just wiped.
-        try withTemporaryCache { _ in
-            Favicons.clearCachedIcons()
-        }
+        try await withFetching(true) {
+            try await withTemporaryCache { directory in
+                let served = Self.uniqueHost()
+                let dead = Self.uniqueHost()
+                let icon = try Fixture.png(width: 16, height: 16)
+                func lookup(_ host: String) async -> NSImage? {
+                    await Favicons.shared.icon(for: URL(string: "https://\(host)/")!)
+                }
 
-        try await withFetching(false) {
-            #expect(await Favicons.shared.icon(for: URL(string: "https://github.com/")!) == nil)
+                // Both read from disk, so both are now remembered in memory:
+                // one as an icon, the other as a host that has none.
+                try icon.write(to: Favicons.cacheFile(for: served))
+                try Data().write(to: directory.appending(path: "\(dead).miss"))
+                #expect(await lookup(served) != nil)
+                #expect(await lookup(dead) == nil)
+
+                Favicons.clearCachedIcons()
+
+                // Each host's disk entry now says the opposite, and a lookup
+                // reads the disk only when memory has nothing to say, so each
+                // answer flips only if memory really was cleared. The marker
+                // is also what keeps the first of these off the network.
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true)
+                try Data().write(to: directory.appending(path: "\(served).miss"))
+                try icon.write(to: Favicons.cacheFile(for: dead))
+                let asked = await requests {
+                    #expect(await lookup(served) == nil)
+                    #expect(await lookup(dead) != nil)
+                }
+                #expect(asked.isEmpty)
+            }
+        }
+    }
+
+    /// An entry past two weeks is neither served nor kept: an icon captured
+    /// through a captive portal must not stand for the site forever, and a
+    /// host that had no icon is asked again. The fresh entry is the control,
+    /// so a reader that never served anything could not pass.
+    @Test func anExpiredEntryIsNeitherServedNorKept() async throws {
+        try await withTemporaryCache { directory in
+            let png = Data([0x89, 0x50, 0x4E, 0x47])
+            let now = Date.now
+            let entries = [
+                ("stale.example.png", png, 15), ("stale-dead.example.miss", Data(), 15),
+                ("fresh.example.png", png, 1),
+            ]
+            for (name, contents, days) in entries {
+                let file = directory.appending(path: name)
+                try contents.write(to: file)
+                try FileManager.default.setAttributes(
+                    [.modificationDate: now.addingTimeInterval(TimeInterval(-days * 86_400))],
+                    ofItemAtPath: file.path(percentEncoded: false))
+            }
+
+            #expect(await Favicons.diskEntry(host: "stale.example") == nil)
+            #expect(await Favicons.diskEntry(host: "stale-dead.example") == nil)
+            #expect(await Favicons.diskEntry(host: "fresh.example") == .icon(png))
+
+            Favicons.prune()
+
+            let left = try FileManager.default.contentsOfDirectory(
+                atPath: directory.path(percentEncoded: false))
+            #expect(left == ["fresh.example.png"])
         }
     }
 
