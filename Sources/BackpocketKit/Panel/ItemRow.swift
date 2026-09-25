@@ -212,7 +212,7 @@ struct ItemRow: View, @MainActor Equatable {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 30)
+        .frame(height: PanelMetrics.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)

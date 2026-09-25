@@ -15,7 +15,7 @@ final class BackpocketPanel: NSPanel {
 
     init(rootView: some View) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: PanelMetrics.defaultWidth, height: 360),
             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
@@ -200,7 +200,7 @@ final class BackpocketPanel: NSPanel {
         var size =
             PanelSize.stored
             ?? NSSize(
-                width: 680,
+                width: PanelMetrics.defaultWidth,
                 height: PanelMetrics.panelHeight(showsLinks: LinkCollection.showsLinks)
             )
         if let visible = targetScreen?.visibleFrame {
