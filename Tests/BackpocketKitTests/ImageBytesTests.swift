@@ -113,15 +113,13 @@ struct ImageBytesTests {
             }
             #expect(data == png)
 
-            // A pasteboard of its own: `.general` is the clipboard of
-            // whoever runs the suite.
-            let pasteboard = NSPasteboard(name: .init("backpocket-image-\(UUID().uuidString)"))
-            defer { pasteboard.releaseGlobally() }
-            Paster.writeImage(data, to: pasteboard)
+            try withPrivatePasteboard { pasteboard in
+                Paster.writeImage(data, to: pasteboard)
 
-            #expect(pasteboard.data(forType: .png) == png)
-            let tiff = try #require(pasteboard.data(forType: .tiff))
-            #expect(NSBitmapImageRep(data: tiff)?.pixelsWide == 320)
+                #expect(pasteboard.data(forType: .png) == png)
+                let tiff = try #require(pasteboard.data(forType: .tiff))
+                #expect(NSBitmapImageRep(data: tiff)?.pixelsWide == 320)
+            }
         }
     }
 

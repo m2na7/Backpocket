@@ -36,3 +36,30 @@ enum Fixture {
                 .representation(using: .png, properties: [:]))
     }
 }
+
+/// A real file, because `Item.fileURLs` checks existence on every read and a
+/// made-up path would make a lookup come back empty for the wrong reason. It
+/// sits alone in a folder of its own, removed afterwards.
+///
+/// Named `id_rsa`, after the file whose path the file-copy rules exist to
+/// keep from pasting as the file itself; suites assert on that name.
+func withRealFile(_ body: (URL) throws -> Void) throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appending(path: "backpocket-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let file = directory.appending(path: "id_rsa")
+    try Data("private key".utf8).write(to: file)
+    try body(file)
+}
+
+/// A pasteboard of its own: writing to `.general` would clobber whatever the
+/// person running the suite has on their real clipboard. Named pasteboards
+/// live on in the pasteboard server after the process exits, so it is
+/// released afterwards rather than left to pile up across runs.
+func withPrivatePasteboard<R>(_ body: (NSPasteboard) throws -> R) rethrows -> R {
+    let pasteboard = NSPasteboard(name: .init("backpocket-test-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+    return try body(pasteboard)
+}

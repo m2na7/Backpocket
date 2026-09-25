@@ -14,17 +14,6 @@ import Testing
 /// no test at all.
 @MainActor
 @Suite struct PasteFlavorTests {
-    private func withRealFile(_ body: (URL) throws -> Void) throws {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appending(path: "backpocket-flavor-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let file = directory.appending(path: "id_rsa")
-        try Data("private key".utf8).write(to: file)
-        try body(file)
-    }
-
     /// One-byte-per-channel PNG. Real bytes, so the flavor rules are decided
     /// the way they are in production rather than against a stub.
     private var pngBytes: Data {
@@ -125,16 +114,8 @@ import Testing
 
     // MARK: Writing it
 
-    /// A pasteboard of its own per test: writing to `.general` would clobber
-    /// whatever the person running the suite has on their real clipboard.
-    private func withPasteboard(_ body: (NSPasteboard) throws -> Void) rethrows {
-        let pasteboard = NSPasteboard(name: .init("backpocket-flavor-\(UUID().uuidString)"))
-        defer { pasteboard.releaseGlobally() }
-        try body(pasteboard)
-    }
-
     @Test func writingTextCarriesTheRichFlavorsAlongside() throws {
-        try withPasteboard { pasteboard in
+        withPrivatePasteboard { pasteboard in
             Paster.write("hello", html: "<b>hello</b>", rtf: Data([0x7B]), to: pasteboard)
 
             #expect(pasteboard.string(forType: .string) == "hello")
@@ -145,7 +126,7 @@ import Testing
 
     @Test func writingFilesOffersBothTheURLAndThePathText() throws {
         try withRealFile { file in
-            try withPasteboard { pasteboard in
+            withPrivatePasteboard { pasteboard in
                 Paster.writeFiles([file], to: pasteboard)
 
                 // The URL is what makes a receiver attach or duplicate the
@@ -158,7 +139,7 @@ import Testing
 
     @Test func writingTextLeavesNoStaleFileURLBehind() throws {
         try withRealFile { file in
-            try withPasteboard { pasteboard in
+            withPrivatePasteboard { pasteboard in
                 // Same pasteboard, files then text. A receiver reading the
                 // leftover file URL would attach a file the user did not
                 // choose to paste.
