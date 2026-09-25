@@ -119,6 +119,14 @@ jobs:
           BACKPOCKET_PUBLISHING: "1"
         run: ./build.sh release
 
+      # The checks release.sh makes on the same bundle, so the fallback path
+      # cannot publish what the usual one would refuse.
+      - name: Check the bundle
+        run: |
+          lipo -archs build/Backpocket.app/Contents/MacOS/Backpocket | grep -q x86_64 ||
+            { echo "binary is not universal" >&2; exit 1; }
+          codesign --verify --deep --strict build/Backpocket.app
+
       - name: Notarize and staple
         if: env.HAS_SIGNING == 'true'
         env:
@@ -137,6 +145,10 @@ jobs:
           # ticket lives in the .app, so re-zip to actually ship it.
           rm build/Backpocket.zip
           ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          # What a user's Mac asks before opening it. Catches a staple that
+          # silently did not take.
+          spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q accepted ||
+            { echo "Gatekeeper would reject this build" >&2; exit 1; }
 
       - name: Ad-hoc sign
         if: env.HAS_SIGNING != 'true'
@@ -188,6 +200,9 @@ jobs:
             build/appcast
           rm -f "$RUNNER_TEMP/sparkle_key"
           cp build/appcast/appcast.xml build/appcast.xml
+          # An entry without a signature is one every client refuses.
+          grep -q edSignature build/appcast.xml ||
+            { echo "appcast has no signature" >&2; exit 1; }
 
       - name: Publish release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
