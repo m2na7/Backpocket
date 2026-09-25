@@ -56,9 +56,18 @@ jobs:
           fetch-depth: 0
 
       - name: Derive version
+        env:
+          # Through env, not interpolated into the script: ${{ }} is expanded
+          # before the shell reads the script, so a quote in the typed text
+          # could end the string and run the rest as a command.
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
+          VERSION="$INPUT_VERSION"
           case "$VERSION" in v*) echo "pass 0.1.0, not v0.1.0" >&2; exit 1 ;; esac
+          # It becomes the tag, the bundle version and part of the download
+          # URL the appcast names, so anything but a plain version stops here.
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+            { echo "version must look like 0.1.0, got '$VERSION'" >&2; exit 1; }
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
