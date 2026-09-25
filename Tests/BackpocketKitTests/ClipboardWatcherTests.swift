@@ -409,6 +409,30 @@ struct ClipboardWatcherTests {
         }
     }
 
+    @Test func aPastedImageStaysSuppressedWhenItsRenditionIsServed() throws {
+        try withPrivatePasteboard { pasteboard in
+            let source = CopySource(name: nil, bundleID: nil)
+            let watcher = ClipboardWatcher(pasteboard: pasteboard, frontmostApplication: { source })
+
+            var copies: [CopiedContent] = []
+            watcher.onCopy = { content, _ in copies.append(content) }
+
+            let png = try Fixture.png(width: 3, height: 2)
+            watcher.suppressingOwnWrite {
+                Paster.writeImage(png, to: pasteboard)
+            }
+
+            // The TIFF beside the PNG is only promised, and the app pasted
+            // into may ask for it well after the write. Keeping that promise
+            // must not look like a new copy, or pasting an image would record
+            // it again.
+            #expect(pasteboard.data(forType: .tiff) != nil)
+            watcher.poll()
+
+            #expect(copies.isEmpty)
+        }
+    }
+
     @Test func aFileCopyIsCapturedAsAFileCopyAndPlainTextIsNot() throws {
         let file = FileManager.default.temporaryDirectory
             .appending(path: "backpocket-\(UUID().uuidString).png")

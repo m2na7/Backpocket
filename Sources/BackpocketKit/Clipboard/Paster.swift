@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import os
 
 /// Puts text on the pasteboard and, when enabled, synthesizes Cmd+V into the
 /// frontmost app. Automatic pasting requires Accessibility (TCC) trust.
@@ -82,17 +83,40 @@ enum Paster {
         // The stored bytes keep whatever container they arrived in; labeling
         // TIFF bytes as public.png feeds strict PNG consumers a corrupt file.
         let isPNG = data.starts(with: pngSignature)
-        pasteboard.setData(data, forType: isPNG ? .png : .tiff)
+        let item = NSPasteboardItem()
+        item.setData(data, forType: isPNG ? .png : .tiff)
         // The other container is offered as a rendition so both PNG-only and
-        // TIFF-only readers can paste.
-        if let rep = NSBitmapImageRep(data: data) {
-            if isPNG, let tiff = rep.tiffRepresentation {
-                pasteboard.setData(tiff, forType: .tiff)
-            } else if !isPNG, let png = rep.representation(using: .png, properties: [:]) {
-                pasteboard.setData(png, forType: .png)
-            }
-        }
+        // TIFF-only readers can paste. It is promised rather than written:
+        // building it is a full decode and re-encode, on the main thread and
+        // ahead of the ⌘V, and a TIFF holds the raw pixels (24 MB for a
+        // Retina screenshot). Now only a reader that asks for it pays that.
+        let rendition = ImageRendition(of: data)
+        item.setDataProvider(rendition, forTypes: [isPNG ? .tiff : .png])
+        pendingRendition.withLock { $0 = rendition }
+        // Still one change, made by clearContents: the one
+        // ClipboardWatcher.suppressingOwnWrite skips. Keeping the promise
+        // later, whenever a reader asks, does not make another.
+        pasteboard.writeObjects([item])
     }
+
+    /// The rendition the last image write promised. AppKit keeps a data
+    /// provider alive until it is finished with it, in practice, but nothing
+    /// documents that, and one freed early would leave the promised flavor
+    /// empty for whoever pastes it. Replaced by the next image write, and
+    /// dropped as soon as AppKit reports it is finished. Behind a lock
+    /// because Paster belongs to no actor, and AppKit calls the provider back
+    /// on whichever thread the read came from.
+    fileprivate static let pendingRendition = OSAllocatedUnfairLock<ImageRendition?>(
+        initialState: nil)
+
+    #if DEBUG
+    /// Whether a promised rendition is still held, so the tests can see it
+    /// released once AppKit is done with it rather than kept for good.
+    /// Debug-only because nothing in a shipping build has a use for it.
+    static var holdsRenditionForTesting: Bool {
+        pendingRendition.withLock { $0 != nil }
+    }
+    #endif
 
     /// Same contract again, for file copies. Writing the URLs as objects
     /// reproduces a Finder copy: the receiver attaches or copies the file
@@ -134,5 +158,48 @@ enum Paster {
         up?.flags = .maskCommand
         down?.post(tap: .cgAnnotatedSessionEventTap)
         up?.post(tap: .cgAnnotatedSessionEventTap)
+    }
+}
+
+/// Builds the image container a clip was not stored in, once a reader asks
+/// for it. See `Paster.writeImage`.
+private final class ImageRendition: NSObject, NSPasteboardItemDataProvider, Sendable {
+    /// The clip's own bytes, in the container they were stored in.
+    private let source: Data
+
+    init(of source: Data) {
+        self.source = source
+    }
+
+    /// Runs on the thread the read came from: the main thread when another
+    /// app pastes, since AppKit serves those requests from the main run loop.
+    /// On a normal quit AppKit calls it for any promise still open, so the
+    /// flavor outlives the app as it did when it was written up front.
+    func pasteboard(
+        _ pasteboard: NSPasteboard?,
+        item: NSPasteboardItem,
+        provideDataForType type: NSPasteboard.PasteboardType
+    ) {
+        guard let rep = NSBitmapImageRep(data: source) else { return }
+        let rendition: Data? =
+            switch type {
+            case .png: rep.representation(using: .png, properties: [:])
+            case .tiff: rep.tiffRepresentation
+            default: nil
+            }
+        if let rendition {
+            item.setData(rendition, forType: type)
+        }
+    }
+
+    /// Called once the promise is kept, or once the pasteboard has moved on
+    /// to someone else's copy. Only this rendition is dropped: a later write
+    /// may already have replaced it.
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        Paster.pendingRendition.withLock { pending in
+            if pending === self {
+                pending = nil
+            }
+        }
     }
 }
