@@ -312,6 +312,44 @@ struct ClipboardWatcherTests {
         #expect(copies.map(\.content.rtf) == [nil])
     }
 
+    @Test func htmlFlavorIsCapturedOnTextCopies() {
+        // What makes "paste as Markdown" possible later: the watcher is the
+        // only place the HTML a styled copy carried is ever read.
+        let copies = captures { pasteboard in
+            pasteboard.setString("x", forType: .string)
+            pasteboard.setString("<b>x</b>", forType: .html)
+        }
+
+        #expect(copies.map(\.content.html) == ["<b>x</b>"])
+    }
+
+    /// The flavor cap counts bytes, not characters, so a fragment well under
+    /// it in characters can still be over it: 100,001 syllables of three
+    /// bytes each. A cap counting characters would keep this one.
+    @Test func oversizedHTMLIsDroppedButStringStillReported() {
+        let copies = captures { pasteboard in
+            pasteboard.setString("still recorded", forType: .string)
+            pasteboard.setString(String(repeating: "한", count: 100_001), forType: .html)
+        }
+
+        #expect(copies.map(\.content.string) == ["still recorded"])
+        #expect(copies.map(\.content.html) == [nil])
+    }
+
+    /// The other side of the flavor cap, for both flavors. As with images,
+    /// only the pair pins where the cap sits: every test above records a
+    /// fragment far inside it or one byte past it.
+    @Test func flavorsMeasuringExactlyTheCapAreStillRecorded() {
+        let copies = captures { pasteboard in
+            pasteboard.setString("at the cap", forType: .string)
+            pasteboard.setString(String(repeating: "a", count: 300_000), forType: .html)
+            pasteboard.setData(Data(count: 300_000), forType: .rtf)
+        }
+
+        #expect(copies.map(\.content.html?.utf8.count) == [300_000])
+        #expect(copies.map(\.content.rtf?.count) == [300_000])
+    }
+
     @Test func ownWriteSuppressionStillRecordsACopyThePollerNeverSaw() {
         withPrivatePasteboard { pasteboard in
             let source = CopySource(name: nil, bundleID: nil)
@@ -418,6 +456,11 @@ extension CopiedContent {
     fileprivate var string: String? {
         guard case .text(let string, _, _) = self else { return nil }
         return string
+    }
+
+    fileprivate var html: String? {
+        guard case .text(_, let html, _) = self else { return nil }
+        return html
     }
 
     fileprivate var rtf: Data? {
