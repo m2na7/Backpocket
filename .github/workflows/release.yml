@@ -19,7 +19,7 @@ permissions:
 env:
   # Same pin as ci.yml, and for the same reason: a tag build must use the
   # toolchain CI has been proving green on, not whatever the image defaults to
-  # on the day someone tags. Change both files together.
+  # on the day someone tags. Change every workflow together.
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
 jobs:

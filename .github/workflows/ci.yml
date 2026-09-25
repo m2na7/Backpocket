@@ -23,8 +23,9 @@ env:
   # image currently ships, so `make lint` passing locally proves nothing about
   # CI and the answer changes silently when GitHub bumps the image. The
   # formatter in particular is a toolchain component: its output moves between
-  # Swift releases. Keep this equal to the version in CONTRIBUTING.md and
-  # .swift-version, and check the image inventory before changing it:
+  # Swift releases. Keep this equal to the version in CONTRIBUTING.md,
+  # .swift-version and the other workflows, and check the image inventory
+  # before changing it:
   # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 

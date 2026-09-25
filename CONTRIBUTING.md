@@ -8,8 +8,8 @@ Thanks for helping. A few ground rules keep the project easy to maintain.
 - Xcode 26.4.1 (Swift 6.3.1). CI pins exactly this version, so a different
   toolchain can format code that CI's `swift format lint` then rejects —
   the formatter travels with the toolchain and its output moves between Swift
-  releases. The pin lives in `DEVELOPER_DIR` in `.github/workflows/ci.yml` and
-  in `.swift-version`; change them together.
+  releases. The pin lives in `DEVELOPER_DIR` in each workflow under
+  `.github/workflows` and in `.swift-version`; change them together.
 
 **First run needs the Accessibility permission, or it looks broken.** "Paste
 automatically" is on by default, and that setting is what requires
@@ -164,9 +164,9 @@ And in tests, bind a throwaway store with `PreferenceStore.withDefaults(_:_:)`
 rather than writing to the real one; see Testing seams in
 `docs/ARCHITECTURE.md` for why it is a task-local.
 
-### Three tools CI does not run
+### Three tools that do not gate a PR
 
-None of these gate a PR. Reach for them when a change warrants it.
+None of these run on a PR. Reach for them when a change warrants it.
 
 `make coverage` — line coverage per file. Read the per-file column, not the
 total: it maps how much of the app has been moved into testable shapes.
@@ -177,7 +177,9 @@ covered and now is half-covered has grown logic nobody tested.
 `make race` — the suite under ThreadSanitizer. Worth running when you touch
 clipboard capture, which hashes and thumbnails off the main actor while
 `Store` serialises those captures by hand. `--sanitize=address` is worth one
-too on the image and pasteboard paths. Both are clean today.
+too on the image and pasteboard paths. Both are clean today, and CI runs the
+ThreadSanitizer pass weekly (`.github/workflows/sanitizers.yml`) to keep it
+that way.
 
 `make mutants` — the one that answers what coverage cannot. It changes an
 operator, runs the suite, and reports whether anything failed; a survivor is
