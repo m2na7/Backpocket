@@ -103,7 +103,8 @@ struct ContentView: View {
     @State private var contents = PanelContents()
 
     /// Hands the highlight to the keyboard: clears any hover and ignores
-    /// hover entries until the pointer genuinely moves (see hoverAnchor).
+    /// hover entries until the pointer genuinely moves (see
+    /// `HoverMachine.anchor`).
     private func suppressHover() {
         hoverState.suppress(at: NSEvent.mouseLocation)
     }
@@ -826,8 +827,8 @@ struct ContentView: View {
     }
 
     /// Activating a link honors its configured default action; everything
-    /// else pastes. Click, ⌘1..9 and ⌘⇧1..9 all come through here, so a link
-    /// never behaves one way under the mouse and another under the keyboard.
+    /// else pastes. Click and ⌘1..9 both come through here, so a link never
+    /// behaves one way under the mouse and another under the keyboard.
     private func activateItem(_ item: Item) {
         if item.isLink, LinkClickAction.current == .open {
             onOpenLink(item)

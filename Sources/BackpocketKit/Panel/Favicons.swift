@@ -449,23 +449,9 @@ final class Favicons {
     }
 
     #if DEBUG
-    /// Where the disk cache lives, when a test needs it somewhere else.
-    ///
-    /// `clearCachedIcons` removes this directory outright, and the real one
-    /// sits inside the running app's Application Support folder, one path
-    /// component away from the store holding the user's clips and notes. A
-    /// test that exercised clearing against the real path would wipe the
-    /// data of whoever ran `swift test` — a contributor's own history.
-    ///
-    /// A task-local rather than a settable global, for the reason
-    /// `PreferenceStore` is: swift-testing runs suites in parallel, so a
-    /// global here is not an override, it is a shared variable. This one was
-    /// written as a global first and caught a real test doing exactly that —
-    /// `cacheFileNameNeverEscapesTheDirectory` asserts on the directory's
-    /// name and read another suite's temporary path roughly one run in
-    /// twenty. A task-local is visible only inside the body that bound it, so
-    /// two suites can hold two directories in the same instant.
-    /// Redirects the disk cache for the duration of `body`.
+    /// Redirects the disk cache for the duration of `body`. See
+    /// `FaviconCacheOverride` for why a test needs this, and why it is a
+    /// task-local.
     nonisolated static func withCacheDirectory<R>(
         _ url: URL, _ body: () throws -> R
     ) rethrows -> R {
@@ -741,7 +727,9 @@ struct FaviconView: View {
 /// here would not be an override, it would be a shared variable. This was
 /// written as a global first and caught a real test doing exactly that —
 /// `cacheFileNameNeverEscapesTheDirectory` asserts on the directory's name
-/// and read another suite's temporary path roughly one run in twenty.
+/// and read another suite's temporary path roughly one run in twenty. A
+/// task-local is visible only inside the body that bound it, so two suites can
+/// hold two directories in the same instant.
 ///
 /// Declared outside `Favicons` because that type is `@MainActor`, and a
 /// task-local nested inside it inherits the isolation its projected value

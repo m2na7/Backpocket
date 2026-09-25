@@ -73,8 +73,8 @@ struct ItemRow: View, @MainActor Equatable {
     /// alone, and reading the flag off the shared item would compare a value
     /// against itself — the top row would keep its old glyph.
     let isPinned: Bool
-    /// The ⌘-slot badge ("3", or "⇧3" for the links section) while Command
-    /// is held; takes the icon's place, Raycast-style.
+    /// The ⌘-slot badge ("3") while Command is held; takes the icon's place,
+    /// Raycast-style.
     let shortcut: String?
     /// 1-based position in the paste stack, nil when not collected.
     let stackNumber: Int?

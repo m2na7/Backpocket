@@ -54,14 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
 
-        // Not `mainContext`: its main-actor assertion traps when first touched
-        // from `applicationDidFinishLaunching`. A context made by hand works,
-        // and Store is @MainActor so access stays single-threaded anyway.
         // Read before anything can rewrite it: the bundle's localization is
         // fixed by now, and Settings compares against this to decide whether
         // a relaunch is actually pending.
         _ = AppLanguage.atLaunch
 
+        // Not `mainContext`: its main-actor assertion traps when first touched
+        // from `applicationDidFinishLaunching`. A context made by hand works,
+        // and Store is @MainActor so access stays single-threaded anyway.
         let store = Store(context: ModelContext(Persistence.makeContainer()))
         store.purgeExpired(days: ExpiryOption.current)
         self.store = store

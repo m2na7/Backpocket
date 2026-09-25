@@ -159,8 +159,9 @@ extension NSColor {
 
 /// Dependency-free token colorer for the detail view.
 enum SyntaxHighlighter {
-    /// Scanning a huge paste would delay the panel from appearing.
-    /// Only the head gets colored; the rest is left plain.
+    /// Scanning a huge paste would delay the panel from appearing. Past the
+    /// limit none of it is highlighted: the whole text comes back in the
+    /// theme's plain color.
     private static let limit = 6_000
 
     static func highlight(

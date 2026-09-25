@@ -27,7 +27,6 @@ struct StackBadge: View {
 }
 
 /// The ⌘-slot chip that takes the row icon's place while Command is held.
-/// Sizes to its label so the links section's "⇧3" fits the same shape.
 struct ShortcutChip: View {
     let label: String
 
