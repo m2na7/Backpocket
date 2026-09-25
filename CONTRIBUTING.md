@@ -58,7 +58,7 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 | `make lint` | `swift format lint --strict` over Sources and Tests, plus `make lint-strings` |
 | `make lint-strings` | check `.lproj` key parity (`scripts/check-localization.sh`) |
 | `make format` | apply the formatter in place |
-| `make icon` | regenerate `Resources/AppIcon.icns` from the icon script |
+| `make icon` | regenerate the asset catalog's app icons and the README preview from `Resources/AppIcon-master.png` |
 | `make clean` | delete `.build` and `build` |
 
 ## Before opening a PR

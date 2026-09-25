@@ -45,6 +45,9 @@ lint-strings:
 format:
 	swift format --in-place --recursive Sources Tests
 
+# Re-renders the App Store catalog's icon PNGs and the README preview from
+# Resources/AppIcon-master.png. build.sh packs those PNGs into AppIcon.icns
+# for the direct download, so no .icns is committed or regenerated here.
 icon:
 	swift scripts/generate-icon.swift
 

@@ -118,15 +118,22 @@ if [ -d "$BIN_DIR/Sparkle.framework" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; the
 fi
 cp -R Resources/*.lproj "$APP/Contents/Resources/"
 
-# Icon is generated separately; tolerate its absence.
-if [ -f Resources/AppIcon.icns ]; then
-  cp Resources/AppIcon.icns "$APP/Contents/Resources/"
-fi
+# The Finder and Dock icon is packed here from the asset catalog's PNGs, so
+# both variants draw the same pixels from one committed source rather than
+# from a second copy kept in step by hand. The PNGs are opaque RGB and
+# iconutil keeps them so; an RGBA roster would add an alpha channel that is
+# 255 on every pixel, about 400 KB of download for nothing visible.
+# Fatal rather than skipped: a bundle without the file shows the generic app
+# icon on users' machines.
+mkdir "$WORK/AppIcon.iconset"
+cp packaging/Assets.xcassets/AppIcon.appiconset/*.png "$WORK/AppIcon.iconset/"
+iconutil -c icns "$WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
 # The store reads the icon from a compiled asset catalog, not from the .icns
 # that serves the Finder — an upload without one is rejected for a missing
 # CFBundleIconName, which actool writes into the plist as it compiles. Only the
 # App Store build needs this; the direct download keeps using AppIcon.icns.
+# actool also writes an AppIcon.icns of its own over the one packed above.
 #
 # --optimization space is Xcode's ASSETCATALOG_COMPILER_OPTIMIZATION=space. The
 # catalog is most of the package's payload, and the setting only swaps lzfse

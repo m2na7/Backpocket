@@ -1,5 +1,7 @@
-// Packages Resources/AppIcon-master.png into the macOS .icns roster and
-// writes a compact README preview. Run from anywhere:
+// Renders Resources/AppIcon-master.png into the App Store asset catalog's icon
+// roster and writes a compact README preview. build.sh packs the same roster
+// into the direct download's AppIcon.icns, so there is no .icns to regenerate
+// here. Run from anywhere:
 //
 //   swift scripts/generate-icon.swift
 
@@ -14,6 +16,19 @@ func fail(_ message: String) -> Never {
 }
 
 func render(_ source: CGImage, pixels: Int) -> CGImage {
+    // An opaque master renders into an opaque context. An alpha-capable one
+    // would store an alpha channel that is 255 on every pixel, which iconutil
+    // keeps: about 400 KB of the direct download for nothing visible. The App
+    // Store build gains nothing either way, since actool re-encodes every
+    // rendition itself. ImageIO reads an RGB PNG as noneSkipLast, not none.
+    let alphaInfo: CGImageAlphaInfo
+    switch source.alphaInfo {
+    case .none, .noneSkipLast, .noneSkipFirst:
+        alphaInfo = .noneSkipLast
+    default:
+        alphaInfo = .premultipliedLast
+    }
+
     guard let space = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
               data: nil,
@@ -22,7 +37,7 @@ func render(_ source: CGImage, pixels: Int) -> CGImage {
               bitsPerComponent: 8,
               bytesPerRow: 0,
               space: space,
-              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              bitmapInfo: alphaInfo.rawValue
           )
     else { fail("could not create \(pixels)px context") }
 
@@ -76,25 +91,15 @@ func writePNG(_ image: CGImage, to url: URL) {
 let scriptURL = URL(fileURLWithPath: #filePath).standardizedFileURL
 let root = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
 let masterURL = root.appendingPathComponent("Resources/AppIcon-master.png")
-let icnsURL = root.appendingPathComponent("Resources/AppIcon.icns")
+let appIconSetURL = root.appendingPathComponent("packaging/Assets.xcassets/AppIcon.appiconset")
 let previewURL = root.appendingPathComponent("docs/app-icon-v3.png")
 
 guard let source = CGImageSourceCreateWithURL(masterURL as CFURL, nil),
       let master = CGImageSourceCreateImageAtIndex(source, 0, nil)
 else { fail("could not read \(masterURL.path)") }
 
-let fileManager = FileManager.default
-let temporaryRoot = fileManager.temporaryDirectory
-    .appendingPathComponent("BackpocketIcon-\(UUID().uuidString)")
-let iconsetURL = temporaryRoot.appendingPathComponent("AppIcon.iconset")
-
-do {
-    try fileManager.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
-} catch {
-    fail("could not create temporary iconset: \(error.localizedDescription)")
-}
-defer { try? fileManager.removeItem(at: temporaryRoot) }
-
+// The names are the ones Contents.json lists and the ones iconutil expects in
+// an .iconset, which is what lets build.sh copy the folder's PNGs as they are.
 let variants: [(String, Int)] = [
     ("icon_16x16", 16), ("icon_16x16@2x", 32),
     ("icon_32x32", 32), ("icon_32x32@2x", 64),
@@ -104,23 +109,10 @@ let variants: [(String, Int)] = [
 ]
 
 for (name, pixels) in variants {
-    writePNG(render(master, pixels: pixels), to: iconsetURL.appendingPathComponent("\(name).png"))
+    let url = appIconSetURL.appendingPathComponent("\(name).png")
+    writePNG(render(master, pixels: pixels), to: url)
 }
 writePNG(renderPreview(master, pixels: 320), to: previewURL)
 
-let iconutil = Process()
-iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-iconutil.arguments = ["-c", "icns", iconsetURL.path, "-o", icnsURL.path]
-
-do {
-    try iconutil.run()
-    iconutil.waitUntilExit()
-} catch {
-    fail("could not launch iconutil: \(error.localizedDescription)")
-}
-guard iconutil.terminationStatus == 0 else {
-    fail("iconutil exited with status \(iconutil.terminationStatus)")
-}
-
-print("wrote \(icnsURL.path)")
+print("wrote \(appIconSetURL.path)")
 print("wrote \(previewURL.path)")
