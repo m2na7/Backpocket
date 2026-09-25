@@ -15,6 +15,12 @@ struct StoreTests: InMemoryStoreSuite {
     private let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
     private let limit = HistoryLimitBox()
 
+    /// A copy of the file at `path`, as Finder makes one, for the tests that
+    /// pin how file-ness is kept.
+    private let fileCopy = CopySource(
+        name: "Finder", bundleID: "com.apple.finder", isFileCopy: true)
+    private let path = "/Users/someone/.ssh/id_rsa"
+
     /// The cap the store reads, held in a box because the store exists before
     /// a test has said what it wants — and because a store built once must
     /// still follow a limit that changes, exactly as it does when the user
@@ -74,6 +80,35 @@ struct StoreTests: InMemoryStoreSuite {
 
         let stored = try #require(store.items.first)
         #expect(stored.content.count == 200_000)
+    }
+
+    /// The cap counts bytes, and ASCII cannot tell that from counting
+    /// characters: each "a" is one of both. "한" is three bytes, so 70,000 of
+    /// them are 210,000 bytes, and 66,666 whole ones are all that fit. A cap
+    /// that counted characters would keep every one; a raw byte cut would end
+    /// on two thirds of a syllable.
+    @Test func truncationCountsBytesNotCharacters() throws {
+        store.add(String(repeating: "한", count: 70_000), source: source)
+
+        let stored = try #require(store.items.first).content
+        #expect(stored.count == 66_666)
+        #expect(stored.utf8.count == 199_998)
+        #expect(stored.allSatisfy { $0 == "한" })
+    }
+
+    /// A character that does not fit is left out whole. The family is one
+    /// character of seven scalars and 25 bytes, and the first to cross the
+    /// cap: a cut at any scalar inside it would leave a lone man and a
+    /// dangling joiner at the end of the clip.
+    @Test func truncationNeverSplitsACharacter() throws {
+        let family = "👨‍👩‍👧‍👦"
+        store.add(
+            String(repeating: "a", count: 199_990) + String(repeating: family, count: 10),
+            source: source)
+
+        let stored = try #require(store.items.first).content
+        #expect(stored.utf8.count == 199_990)
+        #expect(stored.allSatisfy { $0 == "a" })
     }
 
     @Test func addImageStoresDimensionsHashAndThumbnail() async throws {
@@ -655,6 +690,54 @@ struct StoreTests: InMemoryStoreSuite {
         store.clearAll()
 
         #expect(!store.hasStorageFailure)
+    }
+
+    // File-ness, unlike the rich flavors, is a claim about what a clip IS,
+    // and a stale one makes a copied path paste as the file itself. So it
+    // follows the newest capture in both directions, and an edit clears it.
+
+    @Test func aPathRecopiedAsTextStopsBeingAFileCopy() throws {
+        store.add(path, source: fileCopy)
+        #expect(try item(path).isFileCopy)
+
+        store.add(path, source: source)
+
+        #expect(store.items.count == 1)
+        #expect(try item(path).isFileCopy == false)
+    }
+
+    @Test func aPathRecopiedAsAFileBecomesAFileCopy() throws {
+        store.add(path, source: source)
+        #expect(try item(path).isFileCopy == false)
+
+        store.add(path, source: fileCopy)
+
+        #expect(store.items.count == 1)
+        #expect(try item(path).isFileCopy)
+    }
+
+    @Test func editingAFileCopyMakesItText() throws {
+        store.add(path, source: fileCopy)
+        let clip = try item(path)
+
+        #expect(store.update(clip, content: "\(path)\n"))
+
+        // Hand-edited text is text, whatever it was captured as: an edited
+        // path list must not keep pasting the files it no longer describes.
+        #expect(clip.isFileCopy == false)
+    }
+
+    /// Bytes that do not decode are refused before a row exists: they could
+    /// neither be previewed nor pasted usefully. The refusal must not stall
+    /// the capture chain either, or every image after it would be lost.
+    @Test func undecodableImageBytesRecordNoRow() async throws {
+        await addImage(Data("not an image".utf8))
+
+        #expect(store.items.isEmpty)
+        #expect(try persistedContents().isEmpty)
+
+        await addImage(try Fixture.png(width: 4, height: 3))
+        #expect(store.items.map(\.content) == ["Image 4×3"])
     }
 
     @Test func plainRecopyKeepsCapturedRichFlavors() throws {
