@@ -347,13 +347,6 @@ enum IgnoredApps {
         else { return bundleID }
         return name
     }
-
-    static func icon(for bundleID: String) -> NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return nil
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
-    }
 }
 
 /// How many days a disposable clip survives before cleanup.

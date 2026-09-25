@@ -555,7 +555,7 @@ struct IgnorePane: View {
             } else {
                 List(bundleIDs, id: \.self, selection: $selection) { bundleID in
                     HStack(spacing: 8) {
-                        if let icon = IgnoredApps.icon(for: bundleID) {
+                        if let icon = AppIcon.icon(for: bundleID) {
                             Image(nsImage: icon)
                                 .resizable()
                                 .frame(width: 18, height: 18)
