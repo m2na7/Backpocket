@@ -127,6 +127,11 @@ jobs:
             { echo "binary is not universal" >&2; exit 1; }
           codesign --verify --deep --strict build/Backpocket.app
 
+      # Every zip below leaves out resource forks and extended attributes.
+      # The only ones in the bundle are com.apple.provenance, which
+      # --sequesterRsrc used to ship as a __MACOSX sidecar per file; nothing
+      # that matters lives there, because the signatures are embedded or in
+      # _CodeSignature and the stapled ticket is a file in the bundle.
       - name: Notarize and staple
         if: env.HAS_SIGNING == 'true'
         env:
@@ -134,7 +139,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
           xcrun notarytool submit build/Backpocket.zip \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
@@ -144,7 +149,7 @@ jobs:
           # The first zip was only the notarization vehicle; the stapled
           # ticket lives in the .app, so re-zip to actually ship it.
           rm build/Backpocket.zip
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
           # What a user's Mac asks before opening it. Catches a staple that
           # silently did not take.
           spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q accepted ||
@@ -155,7 +160,7 @@ jobs:
         run: |
           # Apple Silicon refuses to launch unsigned binaries; ad-hoc is the floor.
           codesign --force --sign - build/Backpocket.app
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
 
       - name: Delete keychain
         if: always() && env.HAS_SIGNING == 'true'
@@ -168,7 +173,7 @@ jobs:
       # Published rather than kept as an artifact: artifacts expire, and a
       # crash report can arrive long after that.
       - name: Package the symbols
-        run: ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
+        run: ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
 
       # The appcast is what installed copies read to learn a new version
       # exists, and its EdDSA signature is what makes them willing to install
