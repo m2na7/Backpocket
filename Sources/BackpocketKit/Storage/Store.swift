@@ -530,7 +530,11 @@ final class Store: ObservableObject {
             // "Clear history" promising an irreversible delete and handing
             // every row back at the next launch is worse than the failure.
             logger.error("save failed: \(error, privacy: .public)")
-            discardChanges(in: context)
+            // In the context that failed, which is not always `context`: a
+            // failed `insertDetached` leaves its rows in the scratch context,
+            // and since SwiftData never lets go of that context, each failed
+            // image capture would keep its bytes until quit.
+            discardChanges(in: changes)
             fetchItems()
             hasStorageFailure = true
             return false
