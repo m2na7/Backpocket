@@ -194,7 +194,7 @@ struct DeletionUndoTests: InMemoryStoreSuite {
     @Test func aDeleteStopsBeingRestorableOnceTheWindowHasClosed() {
         var undo = DeletionUndo()
         let deletedAt = ContinuousClock.now
-        undo.record([Item(content: "gone")], at: deletedAt)
+        undo.record(deleted("gone"), at: deletedAt)
 
         #expect(undo.canUndo(asOf: deletedAt + DeletionUndo.window - .seconds(1)))
         #expect(!undo.canUndo(asOf: deletedAt + DeletionUndo.window + .seconds(1)))
@@ -210,7 +210,7 @@ struct DeletionUndoTests: InMemoryStoreSuite {
     @Test func theSweepAtTheEndOfTheWindowDropsTheDelete() {
         var undo = DeletionUndo()
         let deletedAt = ContinuousClock.now
-        undo.record([Item(content: "gone")], at: deletedAt)
+        undo.record(deleted("gone"), at: deletedAt)
 
         #expect(undo.canUndo(asOf: deletedAt + DeletionUndo.window - .milliseconds(1)))
         let dropped = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window)
@@ -228,7 +228,7 @@ struct DeletionUndoTests: InMemoryStoreSuite {
         let emptySweep = undo.forgetExpired(asOf: deletedAt)
         #expect(!emptySweep)
 
-        undo.record([Item(content: "gone")], at: deletedAt)
+        undo.record(deleted("gone"), at: deletedAt)
         let earlySweep = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window - .seconds(1))
         #expect(!earlySweep)
 
@@ -242,14 +242,20 @@ struct DeletionUndoTests: InMemoryStoreSuite {
     @Test func anExpiredDeleteDoesNotHandOutTheOneBehindIt() {
         var undo = DeletionUndo()
         let start = ContinuousClock.now
-        undo.record([Item(content: "first")], at: start)
-        undo.record([Item(content: "second")], at: start + DeletionUndo.window)
+        undo.record(deleted("first"), at: start)
+        undo.record(deleted("second"), at: start + DeletionUndo.window)
 
         // The second delete is still fresh, but reaching past it would restore
         // something the user deleted a window ago and has stopped expecting.
         let restorable = undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1))
         #expect(restorable?.map(\.content) == ["second"])
         #expect(undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1)) == nil)
+    }
+
+    /// What `Store` hands over when it records the delete of one row holding
+    /// `content`.
+    private func deleted(_ content: String) -> [DeletionUndo.Snapshot] {
+        [DeletionUndo.Snapshot(Item(content: content))]
     }
 
     /// A snapshot's fields by name, as text that tells two values apart:

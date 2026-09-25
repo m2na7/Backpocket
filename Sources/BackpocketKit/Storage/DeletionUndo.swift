@@ -100,9 +100,13 @@ struct DeletionUndo {
     /// Oldest first, so the newest batch — the one undo takes — is the last.
     private var batches: [Batch] = []
 
-    mutating func record(_ doomed: some Collection<Item>, at now: ContinuousClock.Instant) {
-        guard !doomed.isEmpty else { return }
-        batches.append(Batch(deletedAt: now, snapshots: doomed.map(Snapshot.init)))
+    /// Snapshots, not rows: `Store` records a delete only once its save has
+    /// landed, and by then the rows can no longer be read. A saved delete
+    /// detaches the model, and reading an attribute it had not loaded yet,
+    /// an image's thumbnail say, traps. So the snapshots come from before.
+    mutating func record(_ snapshots: [Snapshot], at now: ContinuousClock.Instant) {
+        guard !snapshots.isEmpty else { return }
+        batches.append(Batch(deletedAt: now, snapshots: snapshots))
         forgetExpired(asOf: now)
         batches.removeFirst(max(0, batches.count - Self.depth))
     }

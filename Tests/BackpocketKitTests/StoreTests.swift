@@ -764,6 +764,23 @@ struct StoreTests: InMemoryStoreSuite {
         }
     }
 
+    @Test func aDeleteThatFailsToSaveOffersNoUndo() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.delete(try #require(failing.items.first))
+            #expect(!failing.canUndoDelete)
+
+            failing.delete([try #require(failing.items.first)])
+            #expect(!failing.canUndoDelete)
+            #expect(!failing.undoDelete())
+
+            // The row never left, so there is nothing to take back. An undo
+            // pressed once the store could write again would file a second
+            // copy of it.
+            #expect(try persisted() == ["kept"])
+            #expect(failing.items.map(\.content) == ["kept"])
+        }
+    }
+
     @Test func aCopyThatFailsToSaveIsNotListed() throws {
         try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
             failing.add("new", source: source)

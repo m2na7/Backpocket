@@ -70,6 +70,11 @@ final class Store: ObservableObject {
     /// Only the two `delete` methods record here. Expiry and the history limit
     /// are the app doing what the user configured, and Clear History is its
     /// own deliberate act; none of them is the slip this exists to catch.
+    ///
+    /// And they record only once the delete's save has landed. A delete that
+    /// failed to save leaves its row in the store and in the list, so there
+    /// is nothing to take back, and an undo pressed once the store can write
+    /// again would add a second copy of a row that never went.
     private var undo = DeletionUndo()
 
     /// Drops the retained rows when their window closes even if the app is
@@ -321,10 +326,12 @@ final class Store: ObservableObject {
 
     func delete(_ item: Item) {
         guard isTracked(item) else { return }
-        recordUndo([item])
+        // Read while the row is still live, and kept only if the delete
+        // lands: see `undo` and `DeletionUndo.record`.
+        let taken = [DeletionUndo.Snapshot(item)]
         context.delete(item)
         items.removeAll { $0 === item }
-        save()
+        if save() { recordUndo(taken) }
     }
 
     /// One save for the whole handful — deleting a ⌘-collected selection
@@ -332,9 +339,9 @@ final class Store: ObservableObject {
     func delete(_ doomed: [Item]) {
         let tracked = doomed.filter(isTracked)
         guard !tracked.isEmpty else { return }
-        recordUndo(tracked)
+        let taken = tracked.map(DeletionUndo.Snapshot.init)
         remove(tracked)
-        save()
+        if save() { recordUndo(taken) }
     }
 
     // MARK: Undo
@@ -373,9 +380,9 @@ final class Store: ObservableObject {
         return true
     }
 
-    private func recordUndo(_ doomed: some Collection<Item>) {
+    private func recordUndo(_ taken: [DeletionUndo.Snapshot]) {
         let deletedAt = ContinuousClock.now
-        undo.record(doomed, at: deletedAt)
+        undo.record(taken, at: deletedAt)
         // The window is enforced lazily on read, which is enough to decide
         // what may be restored but not enough to stop holding the bytes: an
         // app nobody touches again would keep the deleted content until quit.
