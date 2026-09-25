@@ -77,6 +77,14 @@ extension Item {
     /// its own section when the collect-links preference asks for that, so
     /// nothing is stored and the classification can never go stale.
     var linkURL: URL? {
+        Self.linkURL(in: content, isNote: isNote, isImage: isImage)
+    }
+
+    /// `linkURL` over fields the caller has already read. Every property read
+    /// on an `@Model` is a trip through SwiftData, and `PanelIndex` reads
+    /// these for every item on every store change; this keeps the rule in one
+    /// place without making it read them twice.
+    static func linkURL(in content: String, isNote: Bool, isImage: Bool) -> URL? {
         // Notes and images are excluded here rather than in WebLink: the rule
         // is about the text, the exclusions are about what this row IS.
         guard !isNote, !isImage else { return nil }

@@ -172,7 +172,15 @@ a bug in this document.
   to draw and the same lists as identifiers for the selection. They were five
   pieces of `@State` kept in step by hand, and one recompute that updates the
   lists but not the identifiers leaves the selection walking rows the panel is
-  no longer drawing.
+  no longer drawing. It also carries the `PanelIndex` the lists were filtered
+  from, so the next keystroke filters that instead of the store.
+- `PanelIndex` — the per-item facts the lists are filtered from (kind, link,
+  pin, stamp, identifier, the searchable head of the text), read off the
+  models once per `Store.revision` rather than on every keystroke. It is
+  keyed on the revision alone, which is sound only because of the invariant
+  below; `ContentView` checks it against the live revision at the moment of
+  use — a drop onto the notes column recomputes before the revision handler
+  runs — and retakes it on every panel open regardless.
 - `PanelKeyboard` (with `PanelKeyPress`, `PanelKeyContext` and `PanelCommand`)
   — the panel's keyboard as a decision table, over flat scalars rather than
   the store and the view, so every key and modifier combination can be
@@ -180,12 +188,12 @@ a bug in this document.
   beside it: `KeyPress` has no public initializer, so which keys the panel
   claims is stated over the pieces the press was taken apart into.
 - `PanelLists` — pure derivation of what the panel shows (clip/link/note
-  partitioning, search filtering, note sectioning) from the store and the
-  query, so it is testable without a view. Under `LinkCollection.both` the
-  clips and links lists deliberately share rows: one item is two rows, which
-  is why nothing downstream may identify a row by its item alone — the pane
-  is passed in (`ContentView.column`, `HoverMachine.Entry`) rather than
-  worked out from what the row holds.
+  partitioning, search filtering, note sectioning) from the store's
+  `PanelIndex` and the query, so it is testable without a view. Under
+  `LinkCollection.both` the clips and links lists deliberately share rows: one
+  item is two rows, which is why nothing downstream may identify a row by its
+  item alone — the pane is passed in (`ContentView.column`,
+  `HoverMachine.Entry`) rather than worked out from what the row holds.
 - `NoteGrouping` — the Apple Notes-style recency buckets (`NoteGroup`) the
   notes column is grouped by, keyed off `usedAt`. A whole list is placed
   through one `NoteClock`, which works the windows out once and formats each
@@ -327,6 +335,14 @@ a bug in this document.
   expiry already deleted would re-insert the dead model at the front — a ghost
   row with no backing store that also hijacks `add`'s dedup. Writes through
   stale references are dropped instead.
+- **Every change to an item bumps `Store.revision`.** `Store` makes every
+  write and each one ends in the bump; the DEBUG demo seed, which backdates
+  stamps itself, saves through `Store` afterwards. Views refilter on the
+  revision, never on `items`: an in-place change — converting or re-copying
+  the item already on top — leaves the array reference-equal. `PanelIndex`
+  goes further and snapshots the items per revision, so a write that skipped
+  the bump would leave the panel searching what the rows used to say until it
+  next opens.
 - **Panels never activate the app.** `BackpocketPanel`, `DetailPanel`, and
   `EditPanel` are all non-activating; focus never leaves the paste target.
   `SettingsWindow` is the sole, deliberate exception.

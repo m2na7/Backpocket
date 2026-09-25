@@ -99,7 +99,8 @@ struct ContentView: View {
 
     // Several places read the lists within one render pass, so computed
     // properties would re-run the same filter every time. Filter once, only
-    // when the source or the query changes.
+    // when the source or the query changes — and read the items themselves
+    // only when the source does (see `PanelIndex`).
     @State private var contents = PanelContents()
 
     /// Hands the highlight to the keyboard: clears any hover and ignores
@@ -130,8 +131,17 @@ struct ContentView: View {
     /// might be reading, and a `keyboardDriven:` flag picked which of two
     /// hover behaviours the caller inherited. Both are now stated by the
     /// caller, which is the only place that knows what changed underneath.
-    private func recomputeLists() {
-        contents = PanelContents.make(items: store.items, query: query, links: linkCollection)
+    ///
+    /// `rebuildingIndex` retakes the snapshot the lists are filtered from even
+    /// when the store has not changed; see `reset()`.
+    private func recomputeLists(rebuildingIndex: Bool = false) {
+        // The index is checked against the store here, at the moment of use,
+        // rather than retaken in the revision handler: `convertToNotes`
+        // changes the store and recomputes in the same turn, before that
+        // handler has run, and an index from before the drop would still
+        // file the converted clip under clips.
+        let index = rebuildingIndex ? PanelIndex(store) : contents.index.refreshed(from: store)
+        contents = PanelContents.make(index: index, query: query, links: linkCollection)
 
         // Every store mutation lands here via store.revision, so this is where
         // a handful notices that one of its picks is gone.
@@ -953,7 +963,11 @@ struct ContentView: View {
         // outright, anchor and pending entry included, which is strictly more
         // than either of the two the list callers pick between.
         dismissDetail()
-        recomputeLists()
+        // A fresh index on every open, whether or not the revision moved: only
+        // keystrokes reuse one. Opening is where the lists were always rebuilt
+        // from the store, so should a change ever slip past the revision, it
+        // lasts until the panel next opens and no longer.
+        recomputeLists(rebuildingIndex: true)
         openTick += 1
         resetHover()
         showsShortcuts = false
