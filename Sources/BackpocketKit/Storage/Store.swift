@@ -327,7 +327,7 @@ final class Store: ObservableObject {
     /// Whether the last delete can still be taken back. Read alongside
     /// `revision` like everything else the panel derives from the store.
     var canUndoDelete: Bool {
-        undo.canUndo(asOf: Date())
+        undo.canUndo(asOf: ContinuousClock.now)
     }
 
     /// Puts the most recent delete back — one call per delete, however many
@@ -339,7 +339,7 @@ final class Store: ObservableObject {
     /// context, and only `Store` may hand out references to live items.
     @discardableResult
     func undoDelete() -> Bool {
-        guard let snapshots = undo.takeLatest(asOf: Date()) else { return false }
+        guard let snapshots = undo.takeLatest(asOf: ContinuousClock.now) else { return false }
 
         let restored = snapshots.map { $0.restored() }
         restored.forEach(context.insert)
@@ -357,16 +357,23 @@ final class Store: ObservableObject {
     }
 
     private func recordUndo(_ doomed: some Collection<Item>) {
-        undo.record(doomed, at: Date())
+        let deletedAt = ContinuousClock.now
+        undo.record(doomed, at: deletedAt)
         // The window is enforced lazily on read, which is enough to decide
         // what may be restored but not enough to stop holding the bytes: an
         // app nobody touches again would keep the deleted content until quit.
         // One timer per recorded delete drops it on schedule instead, and
         // replacing it is safe because the newest batch always outlives the
         // ones beneath it.
+        //
+        // The timer runs to a deadline on the clock the batch was stamped
+        // with, from that same stamp, so the sweep it wakes is certain to
+        // find the batch expired. There is no second chance: nothing re-arms
+        // it, which is why the stamp must not come from a clock that can
+        // step backwards.
         undoExpiry?.cancel()
         undoExpiry = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(DeletionUndo.window))
+            try? await Task.sleep(until: deletedAt + DeletionUndo.window, clock: .continuous)
             guard !Task.isCancelled else { return }
             self?.forgetExpiredDeletions()
         }
@@ -375,7 +382,7 @@ final class Store: ObservableObject {
     private func forgetExpiredDeletions() {
         // Views refilter on `revision` alone, so an offered undo going away
         // has to bump it — and a sweep that dropped nothing must not.
-        if undo.forgetExpired(asOf: Date()) { revision += 1 }
+        if undo.forgetExpired(asOf: ContinuousClock.now) { revision += 1 }
     }
 
     // MARK: Housekeeping

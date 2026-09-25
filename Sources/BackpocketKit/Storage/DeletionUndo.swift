@@ -13,10 +13,17 @@ import Foundation
 /// no" and nothing beyond it — a mis-hit ⌘⌫ is noticed in the same breath,
 /// while a delete the user thought about for a minute was not an accident —
 /// and the depth stops at a short run of them.
+///
+/// Time here is the continuous clock, never the wall clock. The window is a
+/// bound on how long deleted content stays in memory, and the wall clock can
+/// step backwards — a time sync, a correction after wake, a manual change —
+/// which would stretch it for as long as the step, with nothing left to end
+/// it. The continuous clock only moves forward, and keeps counting while the
+/// Mac sleeps, so a delete made before closing the lid is gone on wake.
 struct DeletionUndo {
     /// How long one delete stays restorable. Long enough to see the row go and
     /// reach for the shortcut; short enough that this is never storage.
-    static let window: TimeInterval = 20
+    static let window: Duration = .seconds(20)
 
     /// How many deletes back undo reaches. Clearing a few rows one at a time
     /// and regretting the run is the case worth covering; a depth that held a
@@ -86,28 +93,28 @@ struct DeletionUndo {
     /// One delete, however many rows it removed. A ⌘-collected handful is one
     /// action to the user, so it has to be one step back.
     private struct Batch {
-        let deletedAt: Date
+        let deletedAt: ContinuousClock.Instant
         let snapshots: [Snapshot]
     }
 
     /// Oldest first, so the newest batch — the one undo takes — is the last.
     private var batches: [Batch] = []
 
-    mutating func record(_ doomed: some Collection<Item>, at now: Date) {
+    mutating func record(_ doomed: some Collection<Item>, at now: ContinuousClock.Instant) {
         guard !doomed.isEmpty else { return }
         batches.append(Batch(deletedAt: now, snapshots: doomed.map(Snapshot.init)))
         forgetExpired(asOf: now)
         batches.removeFirst(max(0, batches.count - Self.depth))
     }
 
-    func canUndo(asOf now: Date) -> Bool {
+    func canUndo(asOf now: ContinuousClock.Instant) -> Bool {
         batches.contains { Self.isLive($0, at: now) }
     }
 
     /// The newest delete still inside the window, removed from the stack.
     /// Expired batches are dropped rather than skipped: undo must not reach
     /// past the window into something the user deleted minutes ago.
-    mutating func takeLatest(asOf now: Date) -> [Snapshot]? {
+    mutating func takeLatest(asOf now: ContinuousClock.Instant) -> [Snapshot]? {
         forgetExpired(asOf: now)
         return batches.popLast()?.snapshots
     }
@@ -115,13 +122,13 @@ struct DeletionUndo {
     /// Returns whether anything was dropped, so a caller can tell a sweep that
     /// changed what the UI may offer from one that found nothing.
     @discardableResult
-    mutating func forgetExpired(asOf now: Date) -> Bool {
+    mutating func forgetExpired(asOf now: ContinuousClock.Instant) -> Bool {
         let before = batches.count
         batches.removeAll { !Self.isLive($0, at: now) }
         return batches.count != before
     }
 
-    private static func isLive(_ batch: Batch, at now: Date) -> Bool {
-        now.timeIntervalSince(batch.deletedAt) < window
+    private static func isLive(_ batch: Batch, at now: ContinuousClock.Instant) -> Bool {
+        batch.deletedAt.duration(to: now) < window
     }
 }

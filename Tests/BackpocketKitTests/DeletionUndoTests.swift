@@ -153,27 +153,41 @@ struct DeletionUndoTests {
 
     @Test func aDeleteStopsBeingRestorableOnceTheWindowHasClosed() {
         var undo = DeletionUndo()
-        let deletedAt = Date()
+        let deletedAt = ContinuousClock.now
         undo.record([Item(content: "gone")], at: deletedAt)
 
-        #expect(undo.canUndo(asOf: deletedAt.addingTimeInterval(DeletionUndo.window - 1)))
-        #expect(!undo.canUndo(asOf: deletedAt.addingTimeInterval(DeletionUndo.window + 1)))
+        #expect(undo.canUndo(asOf: deletedAt + DeletionUndo.window - .seconds(1)))
+        #expect(!undo.canUndo(asOf: deletedAt + DeletionUndo.window + .seconds(1)))
         // Expired batches are dropped, not merely hidden: content the user
         // deleted must not sit in memory waiting for a caller to ask.
-        #expect(undo.takeLatest(asOf: deletedAt.addingTimeInterval(DeletionUndo.window + 1)) == nil)
+        #expect(undo.takeLatest(asOf: deletedAt + DeletionUndo.window + .seconds(1)) == nil)
+        #expect(!undo.canUndo(asOf: deletedAt))
+    }
+
+    /// The window is a bound, not a length of time a delete may still reach
+    /// past: the sweep Store's timer makes lands at exactly this instant,
+    /// and nothing re-arms it, so the batch has to go at the boundary itself.
+    @Test func theSweepAtTheEndOfTheWindowDropsTheDelete() {
+        var undo = DeletionUndo()
+        let deletedAt = ContinuousClock.now
+        undo.record([Item(content: "gone")], at: deletedAt)
+
+        #expect(undo.canUndo(asOf: deletedAt + DeletionUndo.window - .milliseconds(1)))
+        let dropped = undo.forgetExpired(asOf: deletedAt + DeletionUndo.window)
+        #expect(dropped)
         #expect(!undo.canUndo(asOf: deletedAt))
     }
 
     @Test func anExpiredDeleteDoesNotHandOutTheOneBehindIt() {
         var undo = DeletionUndo()
-        let start = Date()
+        let start = ContinuousClock.now
         undo.record([Item(content: "first")], at: start)
-        undo.record([Item(content: "second")], at: start.addingTimeInterval(DeletionUndo.window))
+        undo.record([Item(content: "second")], at: start + DeletionUndo.window)
 
         // The second delete is still fresh, but reaching past it would restore
         // something the user deleted a window ago and has stopped expecting.
-        let restorable = undo.takeLatest(asOf: start.addingTimeInterval(DeletionUndo.window + 1))
+        let restorable = undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1))
         #expect(restorable?.map(\.content) == ["second"])
-        #expect(undo.takeLatest(asOf: start.addingTimeInterval(DeletionUndo.window + 1)) == nil)
+        #expect(undo.takeLatest(asOf: start + DeletionUndo.window + .seconds(1)) == nil)
     }
 }
