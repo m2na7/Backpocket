@@ -288,38 +288,35 @@ struct DetailContentSizingTests {
         }
     }
 
-    /// A flat PNG whose dimensions dwarf anything the card can draw. The
-    /// stored byte cap bounds the file, not the pixel count, so this is small
-    /// on disk and enormous decoded.
-    private func hugePNG() throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 4_000, pixelsHigh: 3_000,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let plane = try #require(bitmap.bitmapData)
-        let total = bitmap.bytesPerRow * 3_000
-        for i in stride(from: 0, to: total, by: 4) { plane[i] = 0x80 }
-        return try #require(bitmap.representation(using: .png, properties: [:]))
-    }
-
     /// The card is drawn from a decode capped to what the display can show,
     /// not from the full-size bitmap. That must be invisible: the capped
     /// image has to report the same point size, so the card lays out to
     /// exactly the same rectangle as an uncapped decode would.
+    ///
+    /// The cap is a parameter, so a small image under a smaller cap takes the
+    /// same path a retina screenshot does under the real one, without a
+    /// 12-megapixel fixture. The image fits inside `imageMax`, so the card
+    /// draws it at its own size: a decode whose `size` followed its pixels
+    /// would shrink the card, and fail the layout check below as well.
     @Test func acappedDecodeLaysOutToTheSameCardAsTheFullSizeImage() throws {
-        let data = try hugePNG()
+        let data = try Fixture.png(width: 400, height: 300)
         let imageMax = CGSize(width: 696, height: 840)
 
         let full = try #require(NSImage(data: data))
-        let capped = try #require(DetailPanel.cardImage(from: data, pixels: 1_680))
+        let capped = try #require(DetailPanel.cardImage(from: data, pixels: 100))
 
         #expect(capped.size == full.size)
+        #expect(capped.size == NSSize(width: 400, height: 300))
+        // Exactly the cap, which is what the function exists for: returning
+        // the full-size image, its own fallback, keeps all 400, and a decode
+        // that over-shrank would come in under it.
+        let rep = try #require(capped.representations.first as? NSBitmapImageRep)
+        #expect(max(rep.pixelsWide, rep.pixelsHigh) == 100)
 
         func card(_ image: NSImage) -> DetailContent {
             DetailContent(
                 text: "", highlighted: nil, language: nil, image: image,
-                imageMax: imageMax, imageStats: "4000×3000", meta: DetailMeta(item))
+                imageMax: imageMax, imageStats: "400×300", meta: DetailMeta(item))
         }
         #expect(
             NSHostingView(rootView: card(full)).fittingSize
