@@ -213,13 +213,7 @@ struct ItemRow: View, @MainActor Equatable {
         }
         .padding(.horizontal, 8)
         .frame(height: PanelMetrics.rowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
-        )
-        // The highlight must snap, not fade — a fade reads as lag.
-        .animation(nil, value: highlighted)
-        .contentShape(Rectangle())
+        .modifier(RowHighlight(highlighted: highlighted))
     }
 
     /// The row's identity at a glance: the source app's icon for clips, a

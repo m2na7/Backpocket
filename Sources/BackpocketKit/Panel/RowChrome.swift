@@ -44,6 +44,23 @@ struct ShortcutChip: View {
     }
 }
 
+/// The selection behind a clip, link or note row, which also makes the whole
+/// row clickable rather than only its drawn parts.
+struct RowHighlight: ViewModifier {
+    let highlighted: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
+            )
+            // The highlight must snap, not fade — a fade reads as lag.
+            .animation(nil, value: highlighted)
+            .contentShape(Rectangle())
+    }
+}
+
 /// While searching, only the matched part goes bold. No color.
 func emphasized(_ preview: String, matching query: String) -> Text {
     // No reason to build an AttributedString when not searching — the cost

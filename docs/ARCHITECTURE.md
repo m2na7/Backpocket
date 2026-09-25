@@ -169,7 +169,8 @@ a bug in this document.
 - `NoteGrouping` — the Apple Notes-style recency buckets (`NoteGroup`) the
   notes column is grouped by, keyed off `usedAt`.
 - `RowChrome` — small shared row furniture: the pick-order `StackBadge`, the
-  `⌘`-slot `ShortcutChip`, and search-match emphasis.
+  `⌘`-slot `ShortcutChip`, the `RowHighlight` both row types draw, and
+  search-match emphasis.
 - `RowVoice` (with the `RowSpeech` modifier) — the sentence VoiceOver reads in
   place of a row, composed from plain values so the wording and the order can
   be checked without a view. A row says most of what it is in icons, glyphs
