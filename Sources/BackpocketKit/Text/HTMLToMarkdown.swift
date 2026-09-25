@@ -5,6 +5,8 @@ import Foundation
 /// into a proper tree first, so the walk itself stays simple — and the
 /// whole thing needs no dependencies.
 enum HTMLToMarkdown {
+    /// Main-actor isolated for the stack it recurses on; see `maxDepth`.
+    @MainActor
     static func convert(_ html: String) -> String? {
         // Checked BEFORE parsing: tidy itself recurses per element, so a
         // render-side cap alone cannot protect against a parser that blows
@@ -44,10 +46,11 @@ enum HTMLToMarkdown {
     /// **This number assumes the main thread's 8 MB stack.** Measured off it,
     /// on a 512 KB cooperative-pool thread, the walk takes down the whole
     /// process with a SIGBUS at roughly 100 nested tags — a crash, not a
-    /// catchable error, and a depth this cap admits. The only caller is
-    /// main-actor (`AppDelegate.pasteMarkdown`), which is what keeps it safe,
-    /// so that is a constraint rather than an accident: moving HTML
-    /// conversion off the main thread means lowering this first.
+    /// catchable error, and a depth this cap admits. So `convert` is
+    /// `@MainActor`, and the compiler rather than the one caller's location
+    /// (`AppDelegate.pasteMarkdown`) keeps the walk on that stack. It is a
+    /// constraint, not an accident: moving HTML conversion off the main
+    /// thread means lowering this first, then dropping the attribute.
     private static let maxDepth = 200
 
     /// Elements that never take a closing tag; counting them as openers
@@ -97,6 +100,7 @@ enum HTMLToMarkdown {
     /// that lands on the boundary a function of how many of those a given
     /// macOS adds — not something this project should be pinning. Handing the
     /// walk its depth asks the same question without the guesswork.
+    @MainActor
     static func render(_ node: XMLNode, atDepth depth: Int) -> String {
         render(node, context: Context(depth: depth))
     }
