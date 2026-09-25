@@ -64,7 +64,10 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 ## Before opening a PR
 
 - Run `make test` and `make lint` and make sure both pass. CI runs the same
-  two, plus `swift build -c release` and `./build.sh release`.
+  two, plus `swift build -c release` and `./build.sh release`, and builds and
+  tests the App Store variant as `make test-mas` does. Run that too if the
+  change touches `Updater`, `Paster.mayPrompt`, or anything behind
+  `#if BACKPOCKET_MAS`.
 - Bring a test with the change (see below).
 - For UI changes, include before/after screenshots. Use the launch flags below
   to drive the panel into a reproducible state for capture.

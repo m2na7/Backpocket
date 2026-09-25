@@ -63,3 +63,50 @@ jobs:
             test -f "build/Backpocket.app/Contents/Resources/$lang.lproj/Localizable.strings"
           done
           codesign --verify --deep --strict build/Backpocket.app
+
+  # The App Store variant is a different program at compile time: no
+  # Sparkle, a stub Updater, and a paste default of its own. Nothing else
+  # compiles it before scripts/appstore.sh does at submission time, so a
+  # break there would otherwise surface as a failed submission rather than
+  # a red PR. build.sh itself cannot run here — the provisioning profile it
+  # requires is not in the repository — so this checks the parts it builds
+  # from.
+  mas:
+    runs-on: macos-26
+    env:
+      # Job-level, because every swift invocation re-reads Package.swift and
+      # that is where the variant is decided. The scratch path is the one
+      # build.sh and `make test-mas` use.
+      BACKPOCKET_MAS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: swift build -c release --scratch-path .build/mas
+      # The check passes when grep finds nothing, so a binary that is not
+      # where the build step put it, or an otool that failed, must fail the
+      # step on its own instead of handing grep an empty listing. The shell
+      # has no pipefail, which is why the listing goes through a file.
+      - name: Check the store binary links no Sparkle
+        run: |
+          bin="$(swift build -c release --scratch-path .build/mas --show-bin-path)/Backpocket"
+          test -x "$bin" || { echo "no store binary at $bin" >&2; exit 1; }
+          otool -L "$bin" > "$RUNNER_TEMP/links.txt"
+          if grep -qi sparkle "$RUNNER_TEMP/links.txt"; then
+            echo "the App Store build links Sparkle" >&2
+            exit 1
+          fi
+      # The store reads the icon from this catalog and rejects an upload
+      # without the CFBundleIconName actool writes, so compile it the way
+      # build.sh does.
+      - name: Compile the asset catalog
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          xcrun actool packaging/Assets.xcassets \
+            --compile "$RUNNER_TEMP/assets" \
+            --app-icon AppIcon \
+            --output-partial-info-plist "$RUNNER_TEMP/actool.plist" \
+            --platform macosx --minimum-deployment-target 14.0 \
+            --optimization space \
+            --output-format human-readable-text
+          test -s "$RUNNER_TEMP/assets/Assets.car"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$RUNNER_TEMP/actool.plist"
+      - run: swift test --scratch-path .build/mas
