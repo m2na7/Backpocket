@@ -1,4 +1,7 @@
-# Shapes the notes produced by generate_release_notes in release.yml.
+# Shapes the notes GitHub drafts when a release is written by hand in the web
+# UI and "Generate release notes" is pressed. Neither release path uses them:
+# scripts/release.sh and .github/workflows/release.yml both take the body from
+# CHANGELOG.md.
 changelog:
   exclude:
     labels:

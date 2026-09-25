@@ -72,10 +72,9 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 - For UI changes, include before/after screenshots. Use the launch flags below
   to drive the panel into a reproducible state for capture.
 - Add a line to `CHANGELOG.md` under the unreleased heading at the top if the
-  change is user-visible. GitHub's generated release notes are built from labels, and
-  labels are applied by the issue templates, not by PRs — so a change that
-  isn't written into `CHANGELOG.md` by hand does not reach the release notes
-  in any recognizable form.
+  change is user-visible. Each release's notes are taken from its section of
+  that file, so a change that isn't written there by hand does not reach the
+  release notes at all.
 
 ## Tests
 

@@ -71,6 +71,11 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          # The release body is this version's CHANGELOG.md entry, as in
+          # release.sh. Taken now so a missing entry stops the run before the
+          # build and the notarization are paid for, not at publish time.
+          ./scripts/changelog-section.sh "$VERSION" > "$RUNNER_TEMP/notes.md" ||
+            { echo "add a ## [$VERSION] entry to CHANGELOG.md first" >&2; exit 1; }
 
       - name: Import signing certificate
         if: env.HAS_SIGNING == 'true'
@@ -192,7 +197,9 @@ jobs:
             build/Backpocket.zip
             build/Backpocket.dSYM.zip
             build/appcast.xml
-          generate_release_notes: true
+          # Not generate_release_notes: that summarises merged pull requests,
+          # and a project developed without them gets an empty body.
+          body_path: ${{ runner.temp }}/notes.md
           # Unsigned builds go out as prereleases: users must clear quarantine
           # by hand, so don't present them as the real thing.
           prerelease: ${{ env.HAS_SIGNING != 'true' }}
