@@ -24,12 +24,13 @@ enum Paster {
         #endif
     }
 
-    @discardableResult
-    static func requestAccessibility() -> Bool {
-        guard mayPrompt else { return isTrusted }
+    /// Asks macOS to prompt for Accessibility trust. Does nothing in the App
+    /// Store build, which may not ask; callers read `isTrusted` for the answer.
+    static func requestAccessibility() {
+        guard mayPrompt else { return }
         // Spelled out rather than read from kAXTrustedCheckOptionPrompt: the
         // imported constant is a global var, which no context may read safely.
-        return AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
     static func openAccessibilitySettings() {

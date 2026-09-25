@@ -21,7 +21,6 @@ enum HotKey {
 
     /// False when Carbon refused the combination — the caller must roll back
     /// to a working shortcut, or the app is left with none.
-    @discardableResult
     static func register(keyCode: Int, modifiers: Int, action: @escaping () -> Void) -> Bool {
         self.action = action
         unregister()

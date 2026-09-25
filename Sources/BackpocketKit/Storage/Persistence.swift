@@ -164,7 +164,6 @@ enum Persistence {
     /// Returns false when an unopenable store is still sitting at `url`, so
     /// the caller can leave it alone instead of opening it.
     @MainActor
-    @discardableResult
     private static func setAsideUnopenableStore(at url: URL) -> Bool {
         // Recorded before the move, not after a successful open: recording
         // only success let a store that can never be opened (read-only
