@@ -35,6 +35,15 @@ case "$VERSION" in v*) echo "release.sh: pass 0.1.0, not v0.1.0" >&2; exit 1 ;; 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 die() { echo "release.sh: $1" >&2; exit 1; }
 
+# Zips a bundle without resource forks or extended attributes. Everything
+# the app needs to open is inside the bundle — the signature, the resources
+# it seals, the stapled ticket — so the __MACOSX sidecars --sequesterRsrc
+# adds carry only this machine's com.apple.provenance: 245 entries and
+# about 90 KB of every download.
+zip_bundle() {
+  ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent "$1" "$2"
+}
+
 step "Checking what this needs"
 
 # Every one of these fails later and more confusingly if left to chance —
@@ -91,13 +100,25 @@ step "Notarizing (a few minutes)"
 # Notarization takes a zip, but the ticket is stapled to the .app — so this
 # zip is only a vehicle and is rebuilt afterwards to carry the ticket.
 rm -f build/Backpocket.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+zip_bundle build/Backpocket.app build/Backpocket.zip
 xcrun notarytool submit build/Backpocket.zip \
   --keychain-profile "$PROFILE" --wait || die "notarization failed"
 xcrun stapler staple build/Backpocket.app || die "stapling failed"
 
 rm -f build/Backpocket.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+zip_bundle build/Backpocket.app build/Backpocket.zip
+
+# The archive is what gets published, not the folder it was made from.
+# Unpacked the way Sparkle unpacks it, it has to come out signed and
+# stapled, or a bad zip would reach the release, the feed and the cask.
+CHECK_DIR="$(mktemp -d)"
+trap 'rm -rf "$CHECK_DIR"' EXIT
+ditto -x -k build/Backpocket.zip "$CHECK_DIR"
+codesign --verify --deep --strict "$CHECK_DIR/Backpocket.app" ||
+  die "the app unpacked from Backpocket.zip does not verify"
+xcrun stapler validate "$CHECK_DIR/Backpocket.app" >/dev/null ||
+  die "the app unpacked from Backpocket.zip carries no notarization ticket"
+rm -rf "$CHECK_DIR"
 
 # What a user's Mac actually asks before opening it. Catches a staple that
 # silently did not take.
@@ -106,7 +127,7 @@ spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q "accepted" ||
 
 step "Packaging symbols and appcast"
 rm -f build/Backpocket.dSYM.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
+zip_bundle build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
 
 rm -rf build/appcast && mkdir -p build/appcast
 cp build/Backpocket.zip build/appcast/
