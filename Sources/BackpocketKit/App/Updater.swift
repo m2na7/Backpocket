@@ -61,11 +61,11 @@ final class Updater: ObservableObject {
 
     init() {
         // Started by hand rather than by the initializer, because starting
-        // with an unusable feed hangs the app before its first window: the
-        // placeholder URL that ships in the repository until the appcast host
-        // exists is exactly such a feed, and it took a launch that never drew
-        // anything to find that out. Sparkle reports the failure by throwing
-        // here; letting it throw during init leaves nothing to catch.
+        // with an unusable feed hangs the app before its first window: a
+        // placeholder URL is exactly such a feed, and it took a launch that
+        // never drew anything to find that out. Sparkle reports the failure
+        // by throwing here; letting it throw during init leaves nothing to
+        // catch.
         //
         // No delegate: the standard behaviour — check on launch, then on
         // Sparkle's own interval — is what is wanted, and a delegate is one
@@ -93,9 +93,10 @@ final class Updater: ObservableObject {
 
     /// Whether `SUFeedURL` names somewhere Sparkle could actually ask.
     ///
-    /// The repository carries a placeholder until the appcast host exists —
-    /// `build.sh` refuses to make a release build while it is still there,
-    /// but development builds run with it every day and must not hang.
+    /// The repository has the real feed, so this guards against a fork or a
+    /// regression that puts a placeholder back. `build.sh` refuses to publish
+    /// a build carrying one, but a development build would run with it and
+    /// must not hang.
     private static var hasUsableFeed: Bool {
         guard
             let raw = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,

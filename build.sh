@@ -218,16 +218,17 @@ if [ -n "${BUILD_NUMBER:-}" ]; then
     /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUMBER" "$PLIST"
 fi
 
-# A published build must not carry the placeholder feed. Every installed copy
-# asks the URL baked into it at build time, so a wrong one cannot be corrected
-# by a later release — those users keep asking the dead address forever and
-# the only fix is telling them to download again by hand.
+# A published build must not carry a placeholder feed. The repository has the
+# real one, so this guards against a fork or a regression that puts one back.
+# Every installed copy asks the URL baked into it at build time, so a wrong one
+# cannot be corrected by a later release — those users keep asking the dead
+# address forever and the only fix is telling them to download again by hand.
 #
-# Fatal only when publishing, which the release workflow declares. Compiling
-# the release configuration is not the same act: CI does it on every pull
-# request to prove the bundle still assembles, and failing that would block
-# every change until the appcast host exists. Those builds get the warning,
-# which is the part that has to be impossible to miss either way.
+# Fatal only when publishing, which release.sh and the release workflow
+# declare. Compiling the release configuration is not the same act: CI does it
+# on every pull request only to prove the bundle still assembles, and that
+# build reaches nobody. Those builds get the warning, which is the part that
+# has to be impossible to miss either way.
 # Skipped for the App Store build, which deliberately has no feed: Apple
 # ships those updates.
 if [ "$CONFIG" = "release" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then

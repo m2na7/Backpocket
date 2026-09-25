@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// Chrome shared by the panel's two column builders. Written once because
-/// the copies had already started to drift — only one of them carried the
-/// comments explaining the scroll pinning below.
+/// the copies had already started to drift.
 
 /// A section title with its count capsule.
 struct SectionTitle: View {

@@ -7,9 +7,12 @@ import Foundation
 ///     Backpocket --open                 open the panel pinned to the top-left corner
 ///     Backpocket --open --edit          also open the note editor
 ///     Backpocket --open --settings      also open the settings window
+///     Backpocket --settings-tab=N       with --settings, open on tab N
 ///     Backpocket --open --query=text    pre-fill the search field
 ///     Backpocket --store=/tmp/demo      use a throwaway store (demo data, tests)
 ///     Backpocket --demo                 seed demo content into an empty store
+///     Backpocket --stack=N              pre-collect the first N clips into the paste stack
+///     Backpocket --snapshot=/tmp/x.png  render the panel to a PNG and exit
 enum DebugLaunch {
     static var openPanel: Bool { has("--open") }
     static var openEditor: Bool { has("--edit") }
