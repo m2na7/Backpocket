@@ -255,12 +255,31 @@ fi
 
 # Nested code is signed first, innermost outwards. Signing the outer bundle
 # does NOT sign what is inside it — `--deep` used to paper over that and is
-# deprecated for good reason — and a framework whose XPC services are
-# unsigned fails Gatekeeper on the user's machine, not here.
+# deprecated for good reason — and a framework whose helpers are unsigned
+# fails Gatekeeper on the user's machine, not here.
 #
 # Sparkle's helpers are separate bundles by design: the updater has to
 # outlive the app it is replacing, so it cannot be code inside it.
+#
+# Its XPC services are dropped unless Info.plist turns one on. Sparkle
+# starts a service only when its SUEnable*Service key in the app's
+# Info.plist is true, and otherwise downloads and launches the installer
+# in-process, which is how this unsandboxed build has always updated: the
+# services were shipped and signed but never run. The check reads the
+# finished plist, after every edit above, and a key present with any value
+# keeps them. The signing loop skips whatever is gone.
 if [ -d "$FW" ]; then
+  KEEP_XPC=0
+  for key in SUEnableInstallerLauncherService SUEnableDownloaderService \
+    SUEnableInstallerConnectionService SUEnableInstallerStatusService; do
+    if /usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
+      KEEP_XPC=1
+    fi
+  done
+  if [ "$KEEP_XPC" = "0" ]; then
+    rm -rf "$FW/Versions/Current/XPCServices" "$FW/XPCServices"
+  fi
+
   for nested in \
     "$FW/Versions/B/XPCServices/Downloader.xpc" \
     "$FW/Versions/B/XPCServices/Installer.xpc" \

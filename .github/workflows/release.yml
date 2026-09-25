@@ -99,10 +99,12 @@ jobs:
           # The full identity name, because build.sh keys the hardened runtime
           # and the timestamp off a "Developer ID Application:" prefix — and
           # because signing has to happen inside build.sh, not after it. The
-          # app embeds Sparkle's framework, its XPC services and its updater,
-          # and signing the outer bundle does not touch any of them: re-signing
-          # afterwards would ship helpers still carrying the ad-hoc signature
-          # build.sh gave them, which Gatekeeper rejects on the user's machine.
+          # app embeds Sparkle's framework and its updater, plus its XPC
+          # services when Info.plist enables them (build.sh drops them
+          # otherwise), and signing the outer bundle does not touch any of
+          # them: re-signing afterwards would ship helpers still carrying the
+          # ad-hoc signature build.sh gave them, which Gatekeeper rejects on
+          # the user's machine.
           IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" |
             sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
           [ -n "$IDENTITY" ] || { echo "cert imported but no identity found" >&2; exit 1; }

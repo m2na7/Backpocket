@@ -76,6 +76,21 @@ jobs:
           for lang in en ko ja zh-Hans; do
             test -f "build/Backpocket.app/Contents/Resources/$lang.lproj/Localizable.strings"
           done
+          # build.sh drops Sparkle's XPC services unless Info.plist enables
+          # one with a SUEnable*Service key. A change that turns such a key
+          # on removes this check as well.
+          test ! -e build/Backpocket.app/Contents/Frameworks/Sparkle.framework/Versions/Current/XPCServices
+          # Removing part of a framework can leave one of its top-level
+          # symlinks pointing at nothing, and codesign --verify passes such a
+          # bundle. find -L follows every link, so only the broken ones still
+          # read as links. The listing goes through a file so that a find
+          # which fails stops the step instead of reading as an empty one.
+          find -L build/Backpocket.app -type l > "$RUNNER_TEMP/dangling.txt"
+          if [ -s "$RUNNER_TEMP/dangling.txt" ]; then
+            echo "the bundle has dangling symlinks:" >&2
+            cat "$RUNNER_TEMP/dangling.txt" >&2
+            exit 1
+          fi
           codesign --verify --deep --strict build/Backpocket.app
 
   # The App Store variant is a different program at compile time: no
