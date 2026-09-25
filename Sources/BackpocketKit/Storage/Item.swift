@@ -20,17 +20,28 @@ extension Item {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
+    /// The longest path list, in UTF-8 bytes, still read as a file copy.
+    /// Anything longer reads as text, whatever the capture recorded.
+    static let maxFileListBytes = 8_192
+
+    /// Every check `fileURLs` makes that does not need the disk. `FileClip`
+    /// runs this on every row render, ahead of a cache keyed by content alone,
+    /// so it must stay free of filesystem reads and must cover every input to
+    /// `fileURLs` other than `content`. A check that lived only in `fileURLs`
+    /// would let one row's answer be served to another row with the same
+    /// text — the typed-path confusion `FileClip` describes.
+    var mayBeFileCopy: Bool {
+        isFileCopy && !isNote && !isImage && content.hasPrefix("/")
+            && content.utf8.count <= Item.maxFileListBytes
+    }
+
     /// The files a Finder-style copy put on the pasteboard, one absolute
     /// path per line. Only a capture that really was a file copy qualifies:
     /// text alone can never escalate into a file. Existence is still checked
     /// on every read, so a path that no longer exists stops being a file copy
     /// and no stale flag outlives the file.
     var fileURLs: [URL] {
-        guard isFileCopy, !isNote, !isImage, content.utf8.count <= 8_192,
-            content.hasPrefix("/")
-        else {
-            return []
-        }
+        guard mayBeFileCopy else { return [] }
 
         let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
         var urls: [URL] = []

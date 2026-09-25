@@ -11,18 +11,17 @@ enum FileClip {
     private static var cache = BoundedCache<String, [URL]>(limit: 256)
 
     static func urls(for item: Item) -> [URL] {
-        // The full guard from fileURLs, not just the cheap half. Content
-        // alone does not decide this: the TEXT `/Users/you/.ssh/id_rsa` and a
-        // copy of that FILE are the same string, and `Store.add` reuses the
-        // existing row for repeated content and assigns `isFileCopy` in
-        // place. Testing only the path prefix here let a real file copy prime
-        // the entry and the typed text then hit it, drawing a file icon and
-        // filename for a plain piece of text — the one confusion the capture
-        // path exists to prevent. Everything rejected below returns without
-        // touching the disk, so it needs no cache entry of its own.
-        guard item.isFileCopy, !item.isNote, !item.isImage,
-            item.content.hasPrefix("/"), item.content.utf8.count <= 8_192
-        else { return [] }
+        // The whole of the guard fileURLs starts with, not just its path
+        // prefix check. Content alone does not decide this: the TEXT
+        // `/Users/you/.ssh/id_rsa` and a copy of that FILE are the same
+        // string, and `Store.add` reuses the existing row for repeated content
+        // and assigns `isFileCopy` in place. Testing only the path prefix here
+        // let a real file copy prime the entry and the typed text then hit it,
+        // drawing a file icon and filename for a plain piece of text — the one
+        // confusion the capture path exists to prevent. Everything rejected
+        // below returns without touching the disk, so it needs no cache entry
+        // of its own.
+        guard item.mayBeFileCopy else { return [] }
         if let cached = cache[item.content] { return cached }
 
         let urls = item.fileURLs
