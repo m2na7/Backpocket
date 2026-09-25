@@ -61,6 +61,7 @@ jobs:
           # before the shell reads the script, so a quote in the typed text
           # could end the string and run the rest as a command.
           INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="$INPUT_VERSION"
           case "$VERSION" in v*) echo "pass 0.1.0, not v0.1.0" >&2; exit 1 ;; esac
@@ -68,6 +69,15 @@ jobs:
           # URL the appcast names, so anything but a plain version stops here.
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
             { echo "version must look like 0.1.0, got '$VERSION'" >&2; exit 1; }
+          # A version already tagged or released stops here too, as it does in
+          # release.sh: publishing onto an existing tag would replace that
+          # release's assets under the users who already have it.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already tagged" >&2; exit 1
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "a release for v$VERSION already exists" >&2; exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
@@ -152,6 +162,12 @@ jobs:
           # ticket lives in the .app, so re-zip to actually ship it.
           rm build/Backpocket.zip
           ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
+          # The archive is what gets published, not the folder it was made
+          # from: unpacked the way Sparkle unpacks it, it has to come out
+          # signed and stapled, as release.sh checks.
+          ditto -x -k build/Backpocket.zip "$RUNNER_TEMP/unpacked"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unpacked/Backpocket.app"
+          xcrun stapler validate "$RUNNER_TEMP/unpacked/Backpocket.app"
           # What a user's Mac asks before opening it. Catches a staple that
           # silently did not take.
           spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q accepted ||
