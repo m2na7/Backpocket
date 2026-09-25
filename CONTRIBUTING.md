@@ -12,13 +12,15 @@ Thanks for helping. A few ground rules keep the project easy to maintain.
   `.github/workflows` and in `.swift-version`; change them together.
 
 **First run needs the Accessibility permission, or it looks broken.** "Paste
-automatically" is on by default, and that setting is what requires
-Accessibility trust — so on a machine that has never granted it, `make run`
-shows the onboarding screen instead of the clipboard list. That is the app
-working correctly, not a build failure. Three ways past it:
+automatically" is on by default in the direct build that `make run` produces
+(the App Store build ships it off; see `PasteBehavior.default`), and that
+setting is what requires Accessibility trust — so on a machine that has never
+granted it, `make run` shows the onboarding screen instead of the clipboard
+list. That is the app working correctly, not a build failure. Three ways
+past it:
 
 - Grant the permission (System Settings > Privacy & Security > Accessibility).
-- Turn "paste automatically" off in Settings > General. Picking an item then
+- Turn "paste automatically" off in Settings > Clipboard. Picking an item then
   only copies it, and no permission is needed.
 - Launch with `--demo`. Besides seeding demo items, it bypasses the onboarding
   gate outright, which is why screenshot captures work on a fresh machine.
