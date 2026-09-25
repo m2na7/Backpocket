@@ -530,11 +530,36 @@ final class Store: ObservableObject {
             // "Clear history" promising an irreversible delete and handing
             // every row back at the next launch is worse than the failure.
             logger.error("save failed: \(error, privacy: .public)")
-            context.rollback()
+            discardChanges(in: context)
             fetchItems()
             hasStorageFailure = true
             return false
         }
+    }
+
+    /// Throws away what a failed save tried to write, so that the refetch
+    /// after it reads the store as it still is.
+    ///
+    /// `rollback()` alone does not do that. After a failed save it clears
+    /// the context's change tracking, yet the next fetch through the context
+    /// still returns the changes the save could not write: a row it deleted
+    /// is missing, its edit is applied, its insert is listed. The fetch after
+    /// that one reads the store as it is, as a fresh context does from the
+    /// start. A fetch made before the rollback, even a bare count, takes the
+    /// place of that next fetch, so the refetch after the rollback reads the
+    /// store. That is observed, not documented: SwiftData on macOS 26, with
+    /// the store opened read-only and with the disk full. StoreTests fails if
+    /// it stops holding.
+    ///
+    /// Rolled back in place rather than replaced by a fresh context, for two
+    /// reasons. SwiftData never releases a context whose save failed, so a
+    /// replacement per failure kept another 150 to 170 KB for every failed
+    /// write at 1,000 rows, until quit. And a context kept keeps its models:
+    /// the item an open editor holds is still one of the store's own, so
+    /// saving it again works once the store does.
+    private func discardChanges(in failed: ModelContext) {
+        _ = try? failed.fetchCount(FetchDescriptor<Item>())
+        failed.rollback()
     }
 
     #if DEBUG

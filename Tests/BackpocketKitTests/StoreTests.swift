@@ -668,21 +668,24 @@ struct StoreTests: InMemoryStoreSuite {
     // A save that fails. What the user is told afterwards is decided in the
     // rollback path every write shares, and nothing else reaches it.
     //
-    // Part of what that path promises does not hold, and is marked as a known
-    // issue below rather than left untested: after the failed save,
-    // `context.rollback()` hands back the rows as the failed save left them,
-    // not as the file still has them. SwiftData keeps a failed save's deletes
-    // and edits through the rollback, so the refetch in `Store.write` sees
-    // them too, while a fresh context reads the file as it was. What does
-    // hold, the failure reported and the file untouched, is asserted plainly.
-    // Once the list comes back right these known issues stop being recorded,
-    // and the tests fail until the markers go.
+    // That path works around SwiftData. After a failed save, `rollback()`
+    // clears the context's change tracking, yet the next fetch through the
+    // context still returns what the save could not write: the row it deleted
+    // missing, its edit applied, its insert listed. A fresh context reads the
+    // file unchanged. `Store` fetches once before rolling back, so that its
+    // refetch is not that next fetch, and these tests fail without it.
+    //
+    // A later save that does land is out of their reach, since a store opened
+    // read-only never saves. A throwaway probe on a disk that filled up and
+    // was then freed found that the next successful save through the same
+    // context wrote only its own change, none of the failed one's.
 
     /// Runs `body` against a store whose every save throws, over a file that
     /// already holds whatever `seed` wrote. The file is opened a second time
-    /// with saving refused, the one way a test can make a real save fail, and
-    /// the refusal comes before anything reaches the file: `persisted`, a
-    /// fresh read of it, returns exactly what `seed` left there.
+    /// with saving refused, the one way a test can make a real save fail
+    /// without a disk of its own to fill, and the refusal comes before
+    /// anything reaches the file: `persisted`, a fresh read of it, returns
+    /// exactly what `seed` left there.
     private func withFailingStore(
         seed: (Store) -> Void,
         _ body: (_ failing: Store, _ persisted: () throws -> [String]) throws -> Void
@@ -722,9 +725,7 @@ struct StoreTests: InMemoryStoreSuite {
             // after a write must be what a fresh read of the database
             // returns. A "Clear history" that reports success and hands every
             // row back at the next launch is worse than the failure itself.
-            withKnownIssue("SwiftData keeps a failed save's deletes through rollback()") {
-                #expect(failing.items.map(\.content) == rows)
-            }
+            #expect(failing.items.map(\.content) == rows)
         }
     }
 
@@ -739,9 +740,13 @@ struct StoreTests: InMemoryStoreSuite {
             let rows = try persisted()
             #expect(rows == ["before"])
 
-            withKnownIssue("SwiftData keeps a failed save's edits through rollback()") {
-                #expect(failing.items.map(\.content) == rows)
-            }
+            // The row the editor holds is still the store's own and reads what
+            // the file holds: the list must not show an edit that is gone at
+            // the next launch, and the editor's next save has to reach a row
+            // the store still tracks.
+            #expect(failing.items.map(\.content) == rows)
+            #expect(failing.items.first === clip)
+            #expect(clip.content == "before")
         }
     }
 
@@ -755,9 +760,38 @@ struct StoreTests: InMemoryStoreSuite {
 
             // Still in the file, so it belongs in the list: a row the panel
             // dropped would come back unannounced at the next launch.
-            withKnownIssue("SwiftData keeps a failed save's deletes through rollback()") {
-                #expect(failing.items.map(\.content) == rows)
-            }
+            #expect(failing.items.map(\.content) == rows)
+        }
+    }
+
+    @Test func aCopyThatFailsToSaveIsNotListed() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.add("new", source: source)
+
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
+
+            // Never written, so never listed: the panel must not offer a clip
+            // that is gone at the next launch.
+            #expect(failing.items.map(\.content) == rows)
+        }
+    }
+
+    @Test func aConversionThatFailsToSaveLeavesTheClipAClip() throws {
+        try withFailingStore(seed: { $0.add("clip", source: source) }) { failing, persisted in
+            let clip = try #require(failing.items.first)
+
+            failing.convertToNote(clip)
+
+            #expect(failing.hasStorageFailure)
+            #expect(try persisted() == ["clip"])
+
+            // The failed edit above changed content; this one changes only a
+            // flag, and the panel files the row by it. A clip shown in the
+            // notes column would be back among the clips at the next launch.
+            #expect(failing.items.first === clip)
+            #expect(clip.isNote == false)
         }
     }
 
