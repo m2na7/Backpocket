@@ -105,8 +105,10 @@ final class Store: ObservableObject {
     }
 
     /// `reload()` without the bump, for the two callers that need none: the
-    /// initializer, before anything can have read the store, and a failed
-    /// `save()`, which bumps on its way out whatever happens.
+    /// initializer, before anything can have read the store, and `write(_:)`
+    /// after a failed save, whose callers bump on their way out whatever
+    /// happens — `save()` in its defer, `insertDetached`'s callers once they
+    /// have filed the rows.
     private func fetchItems() {
         do {
             items = try context.fetch(FetchDescriptor<Item>()).sorted(by: Self.ordered)

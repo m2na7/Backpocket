@@ -401,9 +401,10 @@ private func tiffData(side: Int) throws -> Data {
     }
 }
 
-/// The opt-in gate. "Zero network calls unless asked" is the app's stated
-/// privacy promise, so these pin the default and the inertness. The fetch
-/// itself runs only against `FaviconNetworkOverride`, never a real host.
+/// The setting's gate. Favicons are on by default, and turning them off has
+/// to make the feature inert — no request and no disk read — so these pin the
+/// default and the inertness. The fetch itself runs only against
+/// `FaviconNetworkOverride`, never a real host.
 ///
 /// Serialized because every test here shares `Favicons.shared`: a clear in
 /// one would cancel another's download and reset its bookkeeping while it

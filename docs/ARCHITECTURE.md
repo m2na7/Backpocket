@@ -326,10 +326,11 @@ a bug in this document.
   within each block, maintained incrementally.** New rows and every mutation
   that bumps `usedAt` carry `Date()` — the global maximum — so they land at,
   or `promote(_:)` moves them to, the front of their own block
-  (`insertionIndex`), with no refetch. Outside `reload()`, which refetches and
-  sorts (at init, and to roll back after a failed save), exactly two mutations
-  re-sort: `togglePin` (the item crosses blocks) and `undoDelete` (restored
-  rows keep their old `usedAt`, so `insertionIndex` would misfile them). The
+  (`insertionIndex`), with no refetch. Outside a full refetch, which sorts (at
+  init, and after a failed write; `reload()` is the same refetch plus a
+  revision bump), exactly two mutations re-sort: `togglePin` (the item
+  crosses blocks) and `undoDelete` (restored rows keep their old `usedAt`, so
+  `insertionIndex` would misfile them). The
   guard is `isTracked(_:)`: callers hold `Item` references across time (an
   open editor outlives its row), and mutating a reference that trimming or
   expiry already deleted would re-insert the dead model at the front — a ghost
@@ -425,9 +426,11 @@ English, it renders as the raw identifier.
   the binding and the accessor are `#if DEBUG`; release compiles down to
   `{ .standard }`.
 
-  This is what let every suite drop `.serialized` — none remains — and it is
-  why a test must never reach for `UserDefaults` on its
-  own. Prefer parameters over reads where you can: `PanelMetrics.panelHeight`
+  This is what let the suites that read preferences drop `.serialized`, and
+  it is why a test must never reach for `UserDefaults` on its own. One suite
+  is still serialized, for an unrelated reason: the `FaviconFetching` tests
+  all drive the `Favicons.shared` singleton, and a clear in one would cancel
+  another's download in flight. Prefer parameters over reads where you can: `PanelMetrics.panelHeight`
   takes the row count as an argument, which turned a preference-dependent
   assertion into pure geometry.
 - **One defaults read is deliberately outside `PreferenceStore`.**
