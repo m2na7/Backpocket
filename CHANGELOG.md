@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-29
+
 ### Fixed
 - `Cmd+Z` restores a delete under Korean, Japanese kana, Cyrillic and Greek input sources too. It matched the letter typed, and those layouts never type a "z".
 - The hover card closes as soon as the row it shows is deleted, instead of staying up while the pointer rests on it.
