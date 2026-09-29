@@ -1,27 +1,58 @@
 <p align="center">
-  <img src="docs/app-icon-v3.png" width="160" alt="Backpocket 앱 아이콘">
+  <img src="docs/app-icon-v3.png" width="128" alt="Backpocket 앱 아이콘">
 </p>
 
 <h1 align="center">Backpocket</h1>
 
 <p align="center">
-  <strong>일단 넣어두고, 필요할 때 꺼내세요.</strong><br>
-  정리하기 전의 것들을 위한 macOS 백포켓.
+  <strong>복사한 모든 것, 단축키 하나로.</strong><br>
+  클립보드 기록과 메모를 한 패널에 담은 Mac 앱.
+</p>
+
+<p align="center">
+  <a href="https://apps.apple.com/kr/app/id6807467186"><img src="https://img.shields.io/badge/Mac_App_Store-%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-0D96F6?logo=apple&logoColor=white" alt="Mac App Store에서 다운로드"></a>
+  <a href="#설치"><img src="https://img.shields.io/badge/Homebrew-m2na7%2Fbackpocket-FBB040?logo=homebrew&logoColor=white" alt="Homebrew"></a>
+  <a href="https://github.com/m2na7/Backpocket/releases/latest"><img src="https://img.shields.io/github/v/release/m2na7/Backpocket?label=release" alt="최신 릴리스"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT 라이선스"></a>
 </p>
 
 <p align="center"><a href="README.md">English</a> · <strong>한국어</strong></p>
 
 <p align="center">
-  <a href="https://github.com/m2na7/Backpocket"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
-  <a href="Package.swift"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
+  <img src="docs/assets/demo-ko.webp" width="900" alt="Backpocket 사용 모습: ⇧⌘V로 열기, 검색, 미리보기, 메모 저장, 여러 개 모으기">
 </p>
 
 지금 당장 정리할 시간은 없지만 잊고 싶지는 않은 것들이 있습니다. 링크, 문장, 이미지, 파일, 방금 떠오른 생각을 **일단 Backpocket에 넣어두세요.**
 
-<p align="center">
-  <img src="docs/assets/panel.webp" width="820" alt="Backpocket 패널 — 클립보드 기록, 링크, 메모가 한 화면에">
-</p>
+## 자세히 보기
+
+<table>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-04-search.webp" alt="타이핑하는 순간, 바로 찾아요."></td>
+    <td><h3>타이핑하는 순간, 바로 찾아요.</h3><p>클립, 링크, 메모를 한 번에 찾아요. 한 글자씩 칠 때마다 목록이 좁혀져요.</p></td>
+  </tr>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-02-notes.webp" alt="찾거나, 메모로 남기거나."></td>
+    <td><h3>찾거나, 메모로 남기거나.</h3><p>찾는 게 없을 때 <kbd>Enter</kbd>를 누르면 그대로 메모가 돼서 맨 위에 올라가요.</p></td>
+  </tr>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-03-preview.webp" alt="붙여넣기 전에, 미리 보세요."></td>
+    <td><h3>붙여넣기 전에, 미리 보세요.</h3><p>한 줄에서 잠깐 멈추면 카드로 전체 내용을 보여 줘요. 코드는 문법 강조로, 링크와 이미지도요.</p></td>
+  </tr>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-05-stack.webp" alt="여러 개 모아서, 한 번에 붙여넣기."></td>
+    <td><h3>여러 개 모아서, 한 번에 붙여넣기.</h3><p><kbd>Cmd+D</kbd>로 하나씩 담으면 고른 순서대로 한 번에 붙여넣어요.</p></td>
+  </tr>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-06-links.webp" alt="복사한 링크는 알아서 모여요."></td>
+    <td><h3>복사한 링크는 알아서 모여요.</h3><p>링크는 사이트 아이콘과 함께 따로 모이고, <kbd>Cmd+O</kbd>로 바로 열어요.</p></td>
+  </tr>
+  <tr>
+    <td width="64%"><img src="docs/assets/shot-ko-07-privacy.webp" alt="모든 기록은 내 Mac에만."></td>
+    <td><h3>모든 기록은 내 Mac에만.</h3><p>계정도, 동기화도, 추적도 없어요. 비밀번호 관리자는 건너뛰고, 원하는 앱은 기록에서 뺄 수 있어요.</p></td>
+  </tr>
+</table>
 
 ## 기능
 
@@ -36,19 +67,22 @@
 
   지금 Enter가 무엇을 할지 항상 칩으로 보여주고, <kbd>Cmd</kbd>를 누르고 있으면 반대쪽 동작을 미리 볼 수 있어요.
 - **빠르게 고르기.** <kbd>Cmd+1~9</kbd>로 앞의 아홉 줄을 바로 붙여넣어요. <kbd>Cmd+D</kbd>로 여러 개를 고른 순서대로 모으고, <kbd>Cmd</kbd>를 떼면 줄바꿈으로 이어 붙여 한 번에 넣어요.
-- **클립보드가 나르는 모든 것.** 이미지는 썸네일과 함께 들어오고 내용 해시로 중복을 걸러내요. Finder에서 복사한 파일은 경로 문자열이 아니라 **파일 그대로** 남아서, Slack에 붙이면 첨부로 들어가요. HTML과 RTF도 함께 실려서 서식 있는 복사는 서식 그대로, 원하면 깔끔한 마크다운으로 붙어요.
-- **링크는 따로 모아요.** URL만 있는 클립은 자기 섹션에도 함께 쌓이고, <kbd>Cmd+O</kbd>로 바로 열어요. 그래도 여전히 평범한 클립이라 붙여넣기·고정·메모 변환이 모두 그대로 동작해요.
-- **메모는 메모답게.** 기본 메모 앱처럼 최근순으로 묶이고, 고정한 것이 위에 오며, 편집과 삭제가 행에 붙어 있어요. 메모와 고정 항목은 사라지지 않고, 클립보드 기록만 자동으로 만료돼요(기본 7일).
-- **원하는 모양으로.** 메모 열이나 링크 섹션을 끄고, 패널 크기와 가운데 구분선을 조절하고, 단축키도 원하는 대로 바꿀 수 있으며 전부 기억해요. 한국어·영어·일본어·중국어 간체를 지원하고, VoiceOver에서도 각 행을 제대로 읽어줘요.
-- **기기 안에 머물러요.** 계정도 동기화도 서버도 분석도 없어요. 비밀번호 관리자의 내용은 건너뛰고(`org.nspasteboard.ConcealedType`), 특정 앱은 아예 제외할 수 있어요. 네트워크로 나가는 건 두 가지뿐이고 둘 다 설정에서 끌 수 있어요 — 업데이트 확인, 그리고 링크 행에 붙는 파비콘이에요.
+- **클립보드가 나르는 모든 것.** 이미지는 썸네일과 함께 들어오고 내용 해시로 중복을 걸러내요. HTML과 RTF도 함께 실려서 서식 있는 복사는 서식 그대로, 원하면 깔끔한 마크다운으로 붙어요.
+- **메모는 메모답게.** 기본 메모 앱처럼 최근순으로 묶이고, 고정한 것이 위에 와요. 메모와 고정 항목은 사라지지 않고, 클립보드 기록만 자동으로 만료돼요(기본 7일).
+- **원하는 모양으로.** 메모 열이나 링크 섹션을 끄고, 패널 크기와 가운데 구분선을 조절하고, 단축키도 원하는 대로 바꿀 수 있어요. 한국어·영어·일본어·중국어 간체를 지원하고, VoiceOver에서도 각 행을 제대로 읽어줘요.
+- **기기 안에 머물러요.** 계정도 동기화도 서버도 분석도 없어요. 비밀번호 관리자의 내용은 건너뛰고(`org.nspasteboard.ConcealedType`), 특정 앱은 아예 제외할 수 있어요. 네트워크로 나가는 건 링크 파비콘과, 직접 다운로드판의 업데이트 확인뿐이고 둘 다 설정에서 끌 수 있어요.
 
 ## 설치
+
+**Mac App Store**: [Backpocket: Clipboard & Notes](https://apps.apple.com/kr/app/id6807467186). 프로젝트를 응원하는 방법이에요.
+
+**Homebrew** (무료):
 
 ```sh
 brew install --cask m2na7/backpocket/backpocket
 ```
 
-직접 받고 싶다면 [릴리스](https://github.com/m2na7/Backpocket/releases/latest)에서 zip을 내려받아 응용 프로그램 폴더에 넣으세요. 어느 쪽이든 이후 업데이트는 앱이 알아서 받아요.
+직접 받고 싶다면 [릴리스](https://github.com/m2na7/Backpocket/releases/latest)에서 zip을 내려받아 응용 프로그램 폴더에 넣으세요. 직접 다운로드판은 이후 업데이트를 앱이 알아서 받아요.
 
 ## 단축키
 
