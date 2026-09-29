@@ -4,9 +4,11 @@
 #
 #   ./scripts/release.sh 0.1.0
 #
-# CI could do this, and release.yml still can — but macOS runners bill ten
-# minutes for every one on a private repository, so until this repo is public
-# the local path is the cheap one. It produces the same artifacts.
+# Cut here rather than in CI because the signing identity, the notarization
+# credentials and the Sparkle key live in this keychain, not in the
+# repository's secrets. release.yml can still build a release when dispatched
+# by hand, but it neither bumps the Homebrew cask nor deploys the feed, so
+# after one of its releases both are left to do by hand.
 #
 # Prerequisites, each checked below rather than assumed:
 #   - a "Developer ID Application" identity in the keychain
@@ -14,6 +16,8 @@
 #     (xcrun notarytool store-credentials backpocket --apple-id … --team-id …)
 #   - the Sparkle signing key in the login keychain
 #   - gh authenticated as the account owning the repository
+#   - push access to the Homebrew tap
+#   - wrangler logged in, when notes/appcast-site is here to deploy the feed
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,6 +39,15 @@ case "$VERSION" in v*) echo "release.sh: pass 0.1.0, not v0.1.0" >&2; exit 1 ;; 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 die() { echo "release.sh: $1" >&2; exit 1; }
 
+# Zips a bundle without resource forks or extended attributes. Everything
+# the app needs to open is inside the bundle — the signature, the resources
+# it seals, the stapled ticket — so the __MACOSX sidecars --sequesterRsrc
+# adds carry only this machine's com.apple.provenance: 245 entries and
+# about 90 KB of every download.
+zip_bundle() {
+  ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent "$1" "$2"
+}
+
 step "Checking what this needs"
 
 # Every one of these fails later and more confusingly if left to chance —
@@ -46,19 +59,46 @@ IDENTITY="$(security find-identity -v -p codesigning |
 xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 ||
   die "no notarytool profile '$PROFILE' — see 'xcrun notarytool store-credentials'"
 
-git diff --quiet && git diff --cached --quiet ||
-  die "working tree is dirty; a release must be reproducible from a commit"
+# Untracked files count. SwiftPM compiles every source under Sources/ and
+# build.sh copies every .lproj, tracked or not, so a stray file would ship in
+# the build while the tag pushed below does not contain it.
+[ -z "$(git status --porcelain)" ] ||
+  die "working tree is dirty or has untracked files; a release must be reproducible from a commit"
 
 [ -x "$TOOLS/generate_appcast" ] || die "Sparkle tools missing — run 'swift build'"
 
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
 REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 
-# Checked now because both are written to at the very end, long after the
-# expensive part. A tap that cannot be pushed is worth knowing about before
-# notarization, not after.
-gh repo view "$TAP_REPO" >/dev/null 2>&1 || die "cannot reach the tap $TAP_REPO"
+# A version that is already tagged or released means an earlier run got
+# partway through publishing. Running again would rebuild and re-notarize
+# only to stop at `git tag`; that release is finished or undone by hand.
+git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null &&
+  die "tag v$VERSION already exists here — finish that release by hand, or delete the tag"
+git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1 &&
+  die "tag v$VERSION is already on origin — finish that release by hand"
+gh release view "v$VERSION" >/dev/null 2>&1 &&
+  die "a GitHub release for v$VERSION already exists"
+
+# Checked now because the tap and the feed are written to at the very end,
+# long after the expensive part. The tap is public, so being able to see it
+# proves nothing; what the end of the run needs is the right to push to it.
+[ "$(gh api "repos/$TAP_REPO" --jq .permissions.push 2>/dev/null)" = true ] ||
+  die "cannot push to the tap $TAP_REPO"
 [ -n "$FEED_URL" ] || die "Resources/Info.plist has no SUFeedURL"
+
+# The feed is deployed from a site kept outside the repository. Without it
+# the release still goes out and the appcast is uploaded by hand, which is
+# better heard now than after the build. With it, wrangler has to be logged
+# in: `whoami --json` exits non-zero when it is not, where plain `whoami`
+# only says so and exits 0.
+SITE=notes/appcast-site
+if [ -d "$SITE/public" ]; then
+  (cd "$SITE" && npx --yes wrangler whoami --json >/dev/null 2>&1) ||
+    die "wrangler is not logged in, or would not run — see 'npx wrangler whoami' in $SITE"
+else
+  echo "release.sh: $SITE is missing — build/appcast.xml will need uploading by hand" >&2
+fi
 
 # The release body comes from CHANGELOG.md, so a missing entry is a
 # missing release note. Caught here rather than at publish time, when
@@ -88,13 +128,25 @@ step "Notarizing (a few minutes)"
 # Notarization takes a zip, but the ticket is stapled to the .app — so this
 # zip is only a vehicle and is rebuilt afterwards to carry the ticket.
 rm -f build/Backpocket.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+zip_bundle build/Backpocket.app build/Backpocket.zip
 xcrun notarytool submit build/Backpocket.zip \
   --keychain-profile "$PROFILE" --wait || die "notarization failed"
 xcrun stapler staple build/Backpocket.app || die "stapling failed"
 
 rm -f build/Backpocket.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+zip_bundle build/Backpocket.app build/Backpocket.zip
+
+# The archive is what gets published, not the folder it was made from.
+# Unpacked the way Sparkle unpacks it, it has to come out signed and
+# stapled, or a bad zip would reach the release, the feed and the cask.
+CHECK_DIR="$(mktemp -d)"
+trap 'rm -rf "$CHECK_DIR"' EXIT
+ditto -x -k build/Backpocket.zip "$CHECK_DIR"
+codesign --verify --deep --strict "$CHECK_DIR/Backpocket.app" ||
+  die "the app unpacked from Backpocket.zip does not verify"
+xcrun stapler validate "$CHECK_DIR/Backpocket.app" >/dev/null ||
+  die "the app unpacked from Backpocket.zip carries no notarization ticket"
+rm -rf "$CHECK_DIR"
 
 # What a user's Mac actually asks before opening it. Catches a staple that
 # silently did not take.
@@ -103,7 +155,7 @@ spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q "accepted" ||
 
 step "Packaging symbols and appcast"
 rm -f build/Backpocket.dSYM.zip
-ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
+zip_bundle build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
 
 rm -rf build/appcast && mkdir -p build/appcast
 cp build/Backpocket.zip build/appcast/
@@ -111,7 +163,10 @@ cp build/Backpocket.zip build/appcast/
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   build/appcast
 cp build/appcast/appcast.xml build/appcast.xml
-grep -q 'edSignature' build/appcast.xml || die "appcast has no signature"
+# Kept rather than merely checked for: this build's signature is also how the
+# live feed is recognised as this release's once it is deployed.
+SIGNATURE="$(grep -o -m 1 'sparkle:edSignature="[^"][^"]*"' build/appcast.xml)" ||
+  die "appcast has no signature"
 
 step "Publishing"
 # Annotated and explicitly messaged. A bare `git tag` is lightweight until
@@ -155,13 +210,29 @@ git -C "$TAP_DIR" push -q origin HEAD
 # Sparkle only learns a release exists when this file is served. Deploying it
 # is what turns a published release into one that reaches installed copies.
 step "Deploying the appcast"
-SITE=notes/appcast-site
 if [ -d "$SITE/public" ]; then
   cp build/appcast.xml "$SITE/public/appcast.xml"
   (cd "$SITE" && npx --yes wrangler deploy) || die "wrangler deploy failed"
-  sleep 2
-  curl -fsS "$FEED_URL" | grep -q "$VERSION" ||
-    die "the live feed does not mention $VERSION yet"
+
+  # A deploy takes a moment to be served everywhere, so the feed is polled
+  # with a growing wait, about two minutes in all, before this is called a
+  # failure — by now the release, the tag and the cask are public, and a
+  # propagation delay is not a failed release. What it looks for is this
+  # build's signature, since a version number alone also matches digits
+  # elsewhere in the file. Fetched into a variable rather than piped into
+  # grep, whose early exit can fail the pipe under pipefail. The plain URL,
+  # no cache-busting query: it is the one installed copies ask.
+  LIVE=0
+  for delay in 2 4 8 15 30 30 30; do
+    sleep "$delay"
+    FEED="$(curl -fsS --max-time 10 "$FEED_URL" 2>/dev/null || true)"
+    if grep -qF -- "$SIGNATURE" <<<"$FEED"; then
+      LIVE=1
+      break
+    fi
+  done
+  [ "$LIVE" = 1 ] ||
+    die "the live feed still lacks this build after two minutes — the release, the tag and the cask ARE already published, so do not re-run this; check $FEED_URL and redeploy $SITE by hand if it stays stale"
 else
   echo "release.sh: $SITE is missing — upload build/appcast.xml by hand," >&2
   echo "  or no installed copy will learn this release exists." >&2

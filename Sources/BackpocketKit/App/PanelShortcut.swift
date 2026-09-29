@@ -161,22 +161,27 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
     /// The shortcut a key press activates, if any.
     @MainActor
     static func match(_ press: KeyPress) -> PanelShortcut? {
-        // KeyPress's character follows the active input source — under a
-        // Korean layout the O key arrives as "ㅐ" and every letter shortcut
-        // dies. The underlying NSEvent's keyCode names the physical key, so
-        // it is consulted first.
-        let physical: String? = {
-            guard let event = NSApp.currentEvent, event.type == .keyDown else { return nil }
-            if Int(event.keyCode) == kVK_Delete { return "delete" }
-            return HotKeyBinding.ansiName(for: Int(event.keyCode))?.lowercased()
-        }()
-
-        return match(
-            physical: physical,
+        match(
+            physical: physicalKeyName(),
             character: String(press.key.character),
             isDelete: press.key == .delete,
             modifiers: press.modifiers
         )
+    }
+
+    /// The key being pressed right now, named the way a binding names it:
+    /// "delete", or the lowercased ANSI key name. nil when the current event
+    /// is not a key press, or the key has no ANSI name.
+    ///
+    /// KeyPress's character follows the active input source — under a
+    /// Korean layout the O key arrives as "ㅐ" and every letter shortcut
+    /// dies. The underlying NSEvent's keyCode names the physical key, so the
+    /// rebindable shortcuts consult it first, and ⌘Z falls back to it.
+    @MainActor
+    static func physicalKeyName() -> String? {
+        guard let event = NSApp.currentEvent, event.type == .keyDown else { return nil }
+        if Int(event.keyCode) == kVK_Delete { return "delete" }
+        return HotKeyBinding.ansiName(for: Int(event.keyCode))?.lowercased()
     }
 
     /// KeyPress has no public initializer, so the matching itself lives here

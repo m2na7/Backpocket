@@ -5,23 +5,27 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Fetches and caches link favicons. Opt-in: with the setting off (the
-/// default) this file makes no network request and reads nothing from disk,
-/// so "zero network calls" stays true out of the box and turning the setting
-/// back off makes the feature inert rather than merely quiet.
+/// Fetches and caches link favicons. Governed by `FaviconFetching`, which is
+/// on by default and a switch in Settings: with it off this file makes no
+/// network request and reads nothing from disk, so turning the setting off
+/// makes the feature inert rather than merely quiet.
 ///
-/// What a lookup does, at most: three GETs to the link's own host over HTTPS
-/// on the default port — /favicon.ico, the ROOT page (never the copied URL's
-/// own path, which can carry private tokens) to read its declared
-/// <link rel="icon">, and the parent domain's /favicon.ico for hosts behind a
-/// login wall. Successes and failures alike are written to
+/// What a lookup does, at most: four GETs over HTTPS. Three are built here,
+/// on the default port — the link host's /favicon.ico, its ROOT page (never
+/// the copied URL's own path, which can carry private tokens) to read the
+/// declared <link rel="icon">, and the parent domain's /favicon.ico for hosts
+/// behind a login wall. The fourth is that declared icon, which is the site's
+/// own choice and may name another public host, such as its CDN, and a port.
+/// Successes and failures alike are written to
 /// Application Support/Backpocket/Favicons, keyed by host, and expire after
 /// two weeks; the directory is capped and `clearCachedIcons()` empties it.
 ///
 /// The security posture, in order of importance:
-/// - HTTPS only, straight to the link's own host — never a third-party
-///   favicon service, so the domains a user copies leak to no one new. Every
-///   redirect hop is vetted against the same rules, and the chain is capped.
+/// - HTTPS only, and never a third-party favicon service, so the domains a
+///   user copies leak to no one new. Only a declared icon or a redirect can
+///   take a request past the link's host and its parent domain, and then only
+///   to another public host; every redirect hop is vetted against the same
+///   rules, and the chain is capped.
 /// - Local and private hosts (localhost, `*.local`, `.onion`, IP literals in
 ///   any notation) are never contacted — a clipboard full of dev URLs must
 ///   not probe the LAN.
@@ -62,7 +66,7 @@ final class Favicons {
 
     private var cache: [String: NSImage] = [:]
     /// Hosts known to have no usable icon. Backed by dated markers on disk so
-    /// a dead host is not re-probed with three requests on every launch.
+    /// a dead host is not re-probed with up to four requests on every launch.
     private var failed: Set<String> = []
     private var inFlight: [String: Task<Data?, Never>] = [:]
     private var waiters = FetchWaiters()
@@ -78,13 +82,13 @@ final class Favicons {
         return URLSession(configuration: configuration)
     }()
 
-    /// A whole list scrolling into view would otherwise start three requests
-    /// per visible row at once.
+    /// A whole list scrolling into view would otherwise start a download for
+    /// every visible row's host at once.
     private nonisolated static let limiter = FetchLimiter(limit: 3)
 
     func icon(for url: URL) async -> NSImage? {
         // The preference gates the disk cache too: with it off nothing an
-        // earlier opt-in left behind is read, and the feature is inert.
+        // earlier session left behind is read, and the feature is inert.
         guard FaviconFetching.isEnabled else { return nil }
         guard
             let host = Self.normalizedHost(url.host(percentEncoded: false)),
@@ -135,26 +139,37 @@ final class Favicons {
 
         waiters.join(host)
         defer {
-            if waiters.leave(host) { inFlight[host] = nil }
+            // A clear discards the waiter counts along with the tasks, so a
+            // row whose download is no longer the host's current one was
+            // counted in a generation that is gone. Leaving would decrement
+            // the next generation's count instead, and could drop the
+            // download a newer row is sharing.
+            if inFlight[host] == task, waiters.leave(host) { inFlight[host] = nil }
         }
 
         let png = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
-            Task { @MainActor [weak self] in self?.cancelIfSoleWaiter(host: host) }
+            Task { @MainActor [weak self] in self?.cancelIfSoleWaiter(host: host, task: task) }
         }
 
         guard let png, let image = NSImage(data: png) else {
-            if !Task.isCancelled { failed.insert(host) }
+            // A download cancelled under this row, by a clear or by the last
+            // other waiter giving up, comes back empty without having asked
+            // the host anything, so it is no reason to stop asking.
+            if !Task.isCancelled, !task.isCancelled { failed.insert(host) }
             return nil
         }
         cache[host] = image
         return image
     }
 
-    private func cancelIfSoleWaiter(host: String) {
-        guard waiters.isSole(host) else { return }
-        inFlight[host]?.cancel()
+    /// Only the download the asker joined is its to cancel. After a clear the
+    /// host's current one may be newer, with rows of its own waiting, and the
+    /// count that would call the asker sole is that generation's.
+    private func cancelIfSoleWaiter(host: String, task: Task<Data?, Never>) {
+        guard inFlight[host] == task, waiters.isSole(host) else { return }
+        task.cancel()
     }
 
     /// The three attempts, off the main actor and behind the fetch limit.
@@ -188,6 +203,12 @@ final class Favicons {
                 if !Task.isCancelled { recordMiss(host: host) }
                 return nil
             }
+            // A clear cancels this download, and one that lands after the
+            // last byte must not have the host written back into the
+            // directory it just emptied. This narrows that window rather
+            // than closing it: the write runs off the main actor, so a clear
+            // can still fall between this check and the file.
+            guard !Task.isCancelled else { return nil }
             store(png: png, host: host)
             return png
         }
@@ -195,7 +216,7 @@ final class Favicons {
 
     /// One bounded GET; nil unless the body survives the image sanitizer.
     private nonisolated static func imageData(at url: URL) async -> Data? {
-        guard let data = await body(at: url, cap: maxBytes, accepting: imageMIMETypes) else {
+        guard let data = await body(at: url, cap: maxBytes, accepting: imageMIMETypes)?.body else {
             return nil
         }
         return sanitizedPNG(from: data)
@@ -205,8 +226,7 @@ final class Favicons {
     private nonisolated static func declaredIconURL(under base: URL) async -> URL? {
         guard
             let data = await body(
-                at: base, cap: htmlCap, accepting: ["text/html", "application/xhtml+xml"],
-                resolvedBase: base)
+                at: base, cap: htmlCap, accepting: ["text/html", "application/xhtml+xml"])
         else { return nil }
 
         let html = String(decoding: data.body, as: UTF8.self)
@@ -214,19 +234,19 @@ final class Favicons {
         return iconHref(in: html).flatMap { declaredIcon(href: $0, base: data.page) }
     }
 
-    private nonisolated static func body(
-        at url: URL, cap: Int, accepting types: Set<String>
-    ) async -> Data? {
-        await body(at: url, cap: cap, accepting: types, resolvedBase: nil)?.body
-    }
-
     /// Bounds the read itself rather than the finished body: a hostile server
     /// must not be able to stream for the full resource timeout, so the
     /// transfer is aborted the moment it passes the cap — or immediately, if
     /// it announces a length past it.
     private nonisolated static func body(
-        at url: URL, cap: Int, accepting types: Set<String>, resolvedBase: URL?
+        at url: URL, cap: Int, accepting types: Set<String>
     ) async -> (body: Data, page: URL)? {
+        #if DEBUG
+        if let respond = FaviconNetworkOverride.respond {
+            return await respond(url).map { ($0, url) }
+        }
+        #endif
+
         guard let (bytes, response) = try? await session.bytes(from: url, delegate: RedirectGuard())
         else { return nil }
 
@@ -256,7 +276,7 @@ final class Favicons {
         } catch {
             return nil
         }
-        return (data, response.url ?? resolvedBase ?? url)
+        return (data, response.url ?? url)
     }
 
     /// Whether the headers alone admit the body, before a byte of it is read.
@@ -437,31 +457,17 @@ final class Favicons {
 
     /// Internal rather than private only so the disk cache can be read back
     /// directly, for the reason `RedirectGuard` is: a host recorded as having
-    /// no icon must not be re-probed with three requests on every launch, and
-    /// the alternative to asserting on it here is a real fetch.
+    /// no icon must not be re-probed with up to four requests on every
+    /// launch, and the alternative to asserting on it here is a real fetch.
     enum DiskEntry: Sendable, Equatable {
         case icon(Data)
         case miss
     }
 
     #if DEBUG
-    /// Where the disk cache lives, when a test needs it somewhere else.
-    ///
-    /// `clearCachedIcons` removes this directory outright, and the real one
-    /// sits inside the running app's Application Support folder, one path
-    /// component away from the store holding the user's clips and notes. A
-    /// test that exercised clearing against the real path would wipe the
-    /// data of whoever ran `swift test` — a contributor's own history.
-    ///
-    /// A task-local rather than a settable global, for the reason
-    /// `PreferenceStore` is: swift-testing runs suites in parallel, so a
-    /// global here is not an override, it is a shared variable. This one was
-    /// written as a global first and caught a real test doing exactly that —
-    /// `cacheFileNameNeverEscapesTheDirectory` asserts on the directory's
-    /// name and read another suite's temporary path roughly one run in
-    /// twenty. A task-local is visible only inside the body that bound it, so
-    /// two suites can hold two directories in the same instant.
-    /// Redirects the disk cache for the duration of `body`.
+    /// Redirects the disk cache for the duration of `body`. See
+    /// `FaviconCacheOverride` for why a test needs this, and why it is a
+    /// task-local.
     nonisolated static func withCacheDirectory<R>(
         _ url: URL, _ body: () throws -> R
     ) rethrows -> R {
@@ -484,6 +490,7 @@ final class Favicons {
     nonisolated static var cacheDirectory: URL {
         #if DEBUG
         if let override = FaviconCacheOverride.directory { return override }
+        if let path = DebugLaunch.faviconCachePath { return URL(fileURLWithPath: path) }
         #endif
         return URL.applicationSupportDirectory.appending(path: "Backpocket/Favicons")
     }
@@ -668,12 +675,16 @@ actor FetchLimiter {
 
     func run<T: Sendable>(_ work: @Sendable () async -> T) async -> T {
         if active >= limit {
+            // The finisher hands its slot straight over, so a resumed waiter
+            // already holds one. Freeing it and taking it again would leave a
+            // gap while the waiter hops back onto the actor, and a caller
+            // arriving in that gap would take the same slot too.
             await withCheckedContinuation { waiting.append($0) }
+        } else {
+            active += 1
         }
-        active += 1
         defer {
-            active -= 1
-            if !waiting.isEmpty { waiting.removeFirst().resume() }
+            if waiting.isEmpty { active -= 1 } else { waiting.removeFirst().resume() }
         }
         return await work()
     }
@@ -685,8 +696,8 @@ actor FetchLimiter {
 ///
 /// The cost is real and is the reason this stays a switch. Each fetch tells
 /// the linked site's server that this machine holds that link, so a user who
-/// does not want that trade turns it off in Settings and the app makes no
-/// request at all.
+/// does not want that trade turns it off in Settings and this feature makes
+/// no request at all.
 enum FaviconFetching {
     static let `default` = true
 
@@ -737,7 +748,9 @@ struct FaviconView: View {
 /// here would not be an override, it would be a shared variable. This was
 /// written as a global first and caught a real test doing exactly that —
 /// `cacheFileNameNeverEscapesTheDirectory` asserts on the directory's name
-/// and read another suite's temporary path roughly one run in twenty.
+/// and read another suite's temporary path roughly one run in twenty. A
+/// task-local is visible only inside the body that bound it, so two suites can
+/// hold two directories in the same instant.
 ///
 /// Declared outside `Favicons` because that type is `@MainActor`, and a
 /// task-local nested inside it inherits the isolation its projected value
@@ -745,5 +758,20 @@ struct FaviconView: View {
 /// download path.
 enum FaviconCacheOverride {
     @TaskLocal static var directory: URL?
+}
+
+/// Stands in for the network when a test drives a lookup end to end.
+///
+/// The parts of a fetch that race — the shared download, the cancellation a
+/// clear sends it, the disk write that follows — cannot be reached without
+/// one, and the suite makes no real request. A test that needs a fetch
+/// supplies each response's body here instead, and everything around the
+/// transfer runs as it does in the app.
+///
+/// A task-local for the reason `FaviconCacheOverride` is one. It reaches the
+/// download because the unstructured task that runs it inherits the
+/// task-locals of the lookup that started it.
+enum FaviconNetworkOverride {
+    @TaskLocal static var respond: (@Sendable (URL) async -> Data?)?
 }
 #endif

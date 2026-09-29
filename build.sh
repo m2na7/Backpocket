@@ -19,6 +19,14 @@
 set -e
 cd "$(dirname "$0")"
 
+# Intermediate files — actool's partial plist, the decoded provisioning
+# profile, the store entitlements — go in a directory this run owns. Fixed
+# names in /tmp are shared by every build on the machine, so two store builds
+# from different checkouts could sign with each other's entitlements, and the
+# decoded profile would outlive the build.
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
 CONFIG="${1:-debug}"
 APP="build/Backpocket.app"
 IDENTITY="${BACKPOCKET_SIGN_IDENTITY:-}"
@@ -53,16 +61,27 @@ if [ "${BACKPOCKET_UNIVERSAL:-0}" = "1" ]; then
   ARCH_FLAGS=(--arch arm64 --arch x86_64)
 fi
 
+# The App Store build resolves a package graph without Sparkle and compiles
+# with a define the direct build lacks. Sharing .build, each switch between
+# the two prunes Sparkle's binary artifact (so the next direct build has to
+# fetch and unpack it again, from SwiftPM's cache or, when that is cold, the
+# network) and recompiles everything under the other flag. A tree of its own
+# keeps both builds incremental.
+SCRATCH=()
+if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
+  SCRATCH=(--scratch-path .build/mas)
+fi
+
 # Sparkle links as @rpath/Sparkle.framework/..., and SwiftPM only emits an
 # @loader_path rpath — enough while the binary sits beside the framework in
 # .build, useless once it moves into a bundle. Without this the app dies at
 # launch with a dyld "Library not loaded" and no other clue.
 LINK_FLAGS=(-Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --product Backpocket
+swift build -c "$CONFIG" "${SCRATCH[@]}" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --product Backpocket
 # With --arch flags the bin path moves to .build/apple/Products; asking
 # swift build keeps this script agnostic to that layout.
-BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --show-bin-path)"
+BIN_DIR="$(swift build -c "$CONFIG" "${SCRATCH[@]}" "${ARCH_FLAGS[@]}" "${LINK_FLAGS[@]}" --show-bin-path)"
 BIN="$BIN_DIR/Backpocket"
 
 # The dSYM goes too, not just the bundle: a leftover one from an earlier
@@ -85,31 +104,52 @@ fi
 # ditto rather than cp: a framework is a tree of symlinks (Versions/Current,
 # the top-level aliases) and copying those as regular files produces a bundle
 # that codesign rejects.
+FW="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -d "$BIN_DIR/Sparkle.framework" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then
   mkdir -p "$APP/Contents/Frameworks"
-  ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+  ditto "$BIN_DIR/Sparkle.framework" "$FW"
+  # Headers and module maps only matter to a compiler, and nothing compiles
+  # against the bundle — SwiftPM uses its copy in .build. Xcode's Embed
+  # Frameworks phase drops them for the same reason. The top-level entries
+  # are symlinks into the version directory and would dangle if left. Only
+  # these go: Sparkle's .lproj folders are where its installer reads the
+  # progress text a non-English user sees.
+  rm -rf "$FW"/Versions/Current/{Headers,PrivateHeaders,Modules} "$FW"/{Headers,PrivateHeaders,Modules}
 fi
 cp -R Resources/*.lproj "$APP/Contents/Resources/"
 
-# Icon is generated separately; tolerate its absence.
-if [ -f Resources/AppIcon.icns ]; then
-  cp Resources/AppIcon.icns "$APP/Contents/Resources/"
-fi
+# The Finder and Dock icon is packed here from the asset catalog's PNGs, so
+# both variants draw the same pixels from one committed source rather than
+# from a second copy kept in step by hand. The PNGs are opaque RGB and
+# iconutil keeps them so; an RGBA roster would add an alpha channel that is
+# 255 on every pixel, about 400 KB of download for nothing visible.
+# Fatal rather than skipped: a bundle without the file shows the generic app
+# icon on users' machines.
+mkdir "$WORK/AppIcon.iconset"
+cp packaging/Assets.xcassets/AppIcon.appiconset/*.png "$WORK/AppIcon.iconset/"
+iconutil -c icns "$WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
 # The store reads the icon from a compiled asset catalog, not from the .icns
 # that serves the Finder — an upload without one is rejected for a missing
 # CFBundleIconName, which actool writes into the plist as it compiles. Only the
 # App Store build needs this; the direct download keeps using AppIcon.icns.
+# actool also writes an AppIcon.icns of its own over the one packed above.
+#
+# --optimization space is Xcode's ASSETCATALOG_COMPILER_OPTIMIZATION=space. The
+# catalog is most of the package's payload, and the setting only swaps lzfse
+# for zip on the stored renditions: they still decode to the same pixels, and
+# the catalog comes out about 6% smaller.
 if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
   ASSETS="packaging/Assets.xcassets"
   [ -d "$ASSETS" ] || { echo "build.sh: no asset catalog at $ASSETS" >&2; exit 1; }
   xcrun actool "$ASSETS" \
     --compile "$APP/Contents/Resources" \
     --app-icon AppIcon \
-    --output-partial-info-plist /tmp/actool.plist \
+    --output-partial-info-plist "$WORK/actool.plist" \
     --platform macosx --minimum-deployment-target 14.0 \
+    --optimization space \
     --output-format human-readable-text >/dev/null
-  ICON_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" /tmp/actool.plist 2>/dev/null || echo AppIcon)"
+  ICON_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$WORK/actool.plist" 2>/dev/null || echo AppIcon)"
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string $ICON_NAME" "$APP/Contents/Info.plist" 2>/dev/null ||
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconName $ICON_NAME" "$APP/Contents/Info.plist"
 fi
@@ -132,15 +172,15 @@ if [ "${BACKPOCKET_MAS:-0}" = "1" ]; then
   # upload is refused for the mismatch. Both values are read from the profile
   # rather than written down here, so they cannot drift from the one Apple
   # issued.
-  security cms -D -i "$PROFILE_SRC" > /tmp/bp_profile.plist 2>/dev/null
+  security cms -D -i "$PROFILE_SRC" > "$WORK/profile.plist" 2>/dev/null
   APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
-    "Print :Entitlements:com.apple.application-identifier" /tmp/bp_profile.plist 2>/dev/null ||
-    /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /tmp/bp_profile.plist)"
+    "Print :Entitlements:com.apple.application-identifier" "$WORK/profile.plist" 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$WORK/profile.plist")"
   TEAM_IDENTIFIER="$(/usr/libexec/PlistBuddy -c \
-    "Print :Entitlements:com.apple.developer.team-identifier" /tmp/bp_profile.plist 2>/dev/null ||
+    "Print :Entitlements:com.apple.developer.team-identifier" "$WORK/profile.plist" 2>/dev/null ||
     echo "${APP_IDENTIFIER%%.*}")"
 
-  MAS_ENTITLEMENTS=/tmp/bp_mas.entitlements
+  MAS_ENTITLEMENTS="$WORK/mas.entitlements"
   cp Resources/Backpocket.entitlements "$MAS_ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $APP_IDENTIFIER" "$MAS_ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_IDENTIFIER" "$MAS_ENTITLEMENTS"
@@ -185,16 +225,17 @@ if [ -n "${BUILD_NUMBER:-}" ]; then
     /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUMBER" "$PLIST"
 fi
 
-# A published build must not carry the placeholder feed. Every installed copy
-# asks the URL baked into it at build time, so a wrong one cannot be corrected
-# by a later release — those users keep asking the dead address forever and
-# the only fix is telling them to download again by hand.
+# A published build must not carry a placeholder feed. The repository has the
+# real one, so this guards against a fork or a regression that puts one back.
+# Every installed copy asks the URL baked into it at build time, so a wrong one
+# cannot be corrected by a later release — those users keep asking the dead
+# address forever and the only fix is telling them to download again by hand.
 #
-# Fatal only when publishing, which the release workflow declares. Compiling
-# the release configuration is not the same act: CI does it on every pull
-# request to prove the bundle still assembles, and failing that would block
-# every change until the appcast host exists. Those builds get the warning,
-# which is the part that has to be impossible to miss either way.
+# Fatal only when publishing, which release.sh and the release workflow
+# declare. Compiling the release configuration is not the same act: CI does it
+# on every pull request only to prove the bundle still assembles, and that
+# build reaches nobody. Those builds get the warning, which is the part that
+# has to be impossible to miss either way.
 # Skipped for the App Store build, which deliberately has no feed: Apple
 # ships those updates.
 if [ "$CONFIG" = "release" ] && [ "${BACKPOCKET_MAS:-0}" != "1" ]; then
@@ -214,13 +255,31 @@ fi
 
 # Nested code is signed first, innermost outwards. Signing the outer bundle
 # does NOT sign what is inside it — `--deep` used to paper over that and is
-# deprecated for good reason — and a framework whose XPC services are
-# unsigned fails Gatekeeper on the user's machine, not here.
+# deprecated for good reason — and a framework whose helpers are unsigned
+# fails Gatekeeper on the user's machine, not here.
 #
 # Sparkle's helpers are separate bundles by design: the updater has to
 # outlive the app it is replacing, so it cannot be code inside it.
-FW="$APP/Contents/Frameworks/Sparkle.framework"
+#
+# Its XPC services are dropped unless Info.plist turns one on. Sparkle
+# starts a service only when its SUEnable*Service key in the app's
+# Info.plist is true, and otherwise downloads and launches the installer
+# in-process, which is how this unsandboxed build has always updated: the
+# services were shipped and signed but never run. The check reads the
+# finished plist, after every edit above, and a key present with any value
+# keeps them. The signing loop skips whatever is gone.
 if [ -d "$FW" ]; then
+  KEEP_XPC=0
+  for key in SUEnableInstallerLauncherService SUEnableDownloaderService \
+    SUEnableInstallerConnectionService SUEnableInstallerStatusService; do
+    if /usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
+      KEEP_XPC=1
+    fi
+  done
+  if [ "$KEEP_XPC" = "0" ]; then
+    rm -rf "$FW/Versions/Current/XPCServices" "$FW/XPCServices"
+  fi
+
   for nested in \
     "$FW/Versions/B/XPCServices/Downloader.xpc" \
     "$FW/Versions/B/XPCServices/Installer.xpc" \

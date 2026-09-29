@@ -4,7 +4,8 @@
 /// rebindable shortcut has to consult the live NSEvent for the physical key,
 /// because under a Korean layout ⌘O arrives as "ㅐ". That lookup is the one
 /// part of dispatch that cannot be pure, so it happens at the edge and its
-/// answer is handed in here.
+/// answer is handed in here. `physical` arrives the same way, for the same
+/// reason.
 struct PanelKeyPress: Equatable {
     /// The keys the panel gives its own meaning. Everything else — the
     /// letters the user is typing into the field — is a `character`.
@@ -24,6 +25,24 @@ struct PanelKeyPress: Equatable {
     var command: Bool
     var shift: Bool
     var shortcut: PanelShortcut?
+    /// The physical key's name, for ⌘Z to fall back on when the input
+    /// source types a letter that names no Latin key. Only a press with ⌘
+    /// alone and such a letter, made while the field is not composing, ever
+    /// carries one; see `fallsBackToPhysicalKey`.
+    var physical: String?
+
+    /// Whether `character` is a letter from a script with no Latin keys —
+    /// Hangul, kana, Cyrillic, Greek and the like — which is when the typed
+    /// character stops saying which key was pressed.
+    ///
+    /// Latin letters with diacritics do not count, including Vietnamese in
+    /// Latin Extended Additional: AZERTY, QWERTZ, Czech or Turkish keyboards
+    /// type é, ö or ž on keys of their own and print their own Z, so on
+    /// them the letter is the key the user sees.
+    static func fallsBackToPhysicalKey(_ character: Character) -> Bool {
+        guard character.isLetter, let scalar = character.unicodeScalars.first else { return false }
+        return scalar.value >= 0x370 && !(0x1E00...0x1EFF).contains(scalar.value)
+    }
 }
 
 /// Everything the panel's state needs to say before a key means anything.
@@ -162,12 +181,27 @@ enum PanelKeyboard {
             // delete is still restorable. An empty field is not enough
             // on its own — clearing what you typed leaves it empty too,
             // and that undo belongs to the field.
-            if character == "z", !context.hasQuery, context.canUndoDelete {
+            if isUndoKey(press, typing: character), !context.hasQuery, context.canUndoDelete {
                 return .undoDelete
             }
         }
 
         return .unhandled
+    }
+
+    /// ⌘Z by the letter it types, or by the key it sits on when the input
+    /// source types a letter from a non-Latin script there: under a Korean
+    /// layout the Z key arrives as "ㅋ", and the undo would never fire.
+    ///
+    /// The fallback is only for ⌘ alone. ⌘⇧Z is redo, and ⌥ composes
+    /// letters of its own (⌘⌥Z types "Ω" on a US layout), so neither may
+    /// turn into an undo by way of the key underneath. Latin layouts keep
+    /// matching on the printed letter, so AZERTY's Z is still the key the
+    /// user sees labelled Z.
+    private static func isUndoKey(_ press: PanelKeyPress, typing character: Character) -> Bool {
+        if character == "z" { return true }
+        return !press.shift && PanelKeyPress.fallsBackToPhysicalKey(character)
+            && press.physical == "z"
     }
 
     /// What ↩ (or ⌘↩) resolves to right now.

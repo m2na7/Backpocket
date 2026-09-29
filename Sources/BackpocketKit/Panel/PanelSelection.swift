@@ -21,12 +21,13 @@ struct PaneRows: Equatable {
 }
 
 extension PaneRows {
-    @MainActor
-    init(_ lists: PanelLists) {
+    /// From the identifiers the index already holds: reading them off the
+    /// items instead is a SwiftData lookup per row per keystroke.
+    init(_ matches: PanelLists.Matches) {
         self.init(
-            clips: lists.clips.map(\.id),
-            links: lists.links.map(\.id),
-            notes: lists.notes.map(\.id)
+            clips: matches.clips.map(\.id),
+            links: matches.links.map(\.id),
+            notes: matches.notes.map(\.id)
         )
     }
 }

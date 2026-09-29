@@ -11,18 +11,17 @@ enum FileClip {
     private static var cache = BoundedCache<String, [URL]>(limit: 256)
 
     static func urls(for item: Item) -> [URL] {
-        // The full guard from fileURLs, not just the cheap half. Content
-        // alone does not decide this: the TEXT `/Users/you/.ssh/id_rsa` and a
-        // copy of that FILE are the same string, and `Store.add` reuses the
-        // existing row for repeated content and assigns `isFileCopy` in
-        // place. Testing only the path prefix here let a real file copy prime
-        // the entry and the typed text then hit it, drawing a file icon and
-        // filename for a plain piece of text — the one confusion the capture
-        // path exists to prevent. Everything rejected below returns without
-        // touching the disk, so it needs no cache entry of its own.
-        guard item.isFileCopy, !item.isNote, !item.isImage,
-            item.content.hasPrefix("/"), item.content.utf8.count <= 8_192
-        else { return [] }
+        // The whole of the guard fileURLs starts with, not just its path
+        // prefix check. Content alone does not decide this: the TEXT
+        // `/Users/you/.ssh/id_rsa` and a copy of that FILE are the same
+        // string, and `Store.add` reuses the existing row for repeated content
+        // and assigns `isFileCopy` in place. Testing only the path prefix here
+        // let a real file copy prime the entry and the typed text then hit it,
+        // drawing a file icon and filename for a plain piece of text — the one
+        // confusion the capture path exists to prevent. Everything rejected
+        // below returns without touching the disk, so it needs no cache entry
+        // of its own.
+        guard item.mayBeFileCopy else { return [] }
         if let cached = cache[item.content] { return cached }
 
         let urls = item.fileURLs
@@ -74,8 +73,8 @@ struct ItemRow: View, @MainActor Equatable {
     /// alone, and reading the flag off the shared item would compare a value
     /// against itself — the top row would keep its old glyph.
     let isPinned: Bool
-    /// The ⌘-slot badge ("3", or "⇧3" for the links section) while Command
-    /// is held; takes the icon's place, Raycast-style.
+    /// The ⌘-slot badge ("3") while Command is held; takes the icon's place,
+    /// Raycast-style.
     let shortcut: String?
     /// 1-based position in the paste stack, nil when not collected.
     let stackNumber: Int?
@@ -213,14 +212,8 @@ struct ItemRow: View, @MainActor Equatable {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 30)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
-        )
-        // The highlight must snap, not fade — a fade reads as lag.
-        .animation(nil, value: highlighted)
-        .contentShape(Rectangle())
+        .frame(height: PanelMetrics.rowHeight)
+        .modifier(RowHighlight(highlighted: highlighted))
     }
 
     /// The row's identity at a glance: the source app's icon for clips, a

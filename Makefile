@@ -1,4 +1,4 @@
-.PHONY: all build test coverage mutants race format icon app run clean lint lint-strings
+.PHONY: all build test build-mas test-mas coverage mutants race format icon app run clean lint lint-strings
 
 all: build
 
@@ -7,6 +7,16 @@ build:
 
 test:
 	swift test
+
+# The App Store variant, in a build tree of its own: it resolves without
+# Sparkle and compiles with another define, so sharing .build with the direct
+# build would throw both caches away on every switch. build.sh uses the same
+# tree.
+build-mas:
+	BACKPOCKET_MAS=1 swift build --scratch-path .build/mas
+
+test-mas:
+	BACKPOCKET_MAS=1 swift test --scratch-path .build/mas
 
 # Line coverage per file, worst first. Reported, never gated — see the script.
 coverage:
@@ -35,6 +45,9 @@ lint-strings:
 format:
 	swift format --in-place --recursive Sources Tests
 
+# Re-renders the App Store catalog's icon PNGs and the README preview from
+# Resources/AppIcon-master.png. build.sh packs those PNGs into AppIcon.icns
+# for the direct download, so no .icns is committed or regenerated here.
 icon:
 	swift scripts/generate-icon.swift
 

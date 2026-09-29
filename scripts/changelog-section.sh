@@ -14,19 +14,23 @@ VERSION="${1:-}"
 [ -n "$VERSION" ] || { echo "usage: changelog-section.sh <version>" >&2; exit 1; }
 
 # Everything between this version's heading and the next one, blank lines at
-# either end trimmed. Exits non-zero when the section is missing so a release
-# stops rather than shipping an empty body.
-awk -v version="## [$VERSION]" '
+# either end trimmed. The ones in between are Markdown, not padding: they
+# separate paragraphs and end lists, so they are held back and written out
+# only once another line follows. Exits non-zero when the section is missing
+# so a release stops rather than shipping an empty body.
+SECTION="$(awk -v version="## [$VERSION]" '
     index($0, version) == 1 { found = 1; next }
     found && /^## \[/       { exit }
     found                   { print }
-' CHANGELOG.md | sed -e '/./,$!d' | awk 'NF {blank = 0; print; next} {blank++; next} END {}' > /tmp/section.$$
+' CHANGELOG.md | awk '
+    !NF  { blank++; next }
+    seen { while (blank > 0) { print ""; blank-- } }
+         { blank = 0; seen = 1; print }
+')"
 
-if [ ! -s /tmp/section.$$ ]; then
-  rm -f /tmp/section.$$
+if [ -z "$SECTION" ]; then
   echo "changelog-section.sh: CHANGELOG.md has no entry for $VERSION" >&2
   exit 1
 fi
 
-cat /tmp/section.$$
-rm -f /tmp/section.$$
+printf '%s\n' "$SECTION"

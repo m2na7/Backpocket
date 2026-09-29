@@ -1,0 +1,29 @@
+name: Sanitizers
+
+# The suite under ThreadSanitizer, weekly rather than on every pull request
+# because it is slower. Clipboard capture hashes and thumbnails off the main
+# actor while Store serialises those captures by hand, which is the kind of
+# code where a race shows up on a user's machine and never in a plain test run.
+# `make race` is the same check locally; this keeps it clean between the times
+# someone thinks to run it.
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Same pin as ci.yml, for the same reason. Change every workflow together.
+  DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
+
+jobs:
+  thread:
+    runs-on: macos-26
+    # Instrumented, so slower than ci.yml's jobs; still bounded, so a hang
+    # does not hold the runner for the 360-minute default.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: swift test --sanitize=thread

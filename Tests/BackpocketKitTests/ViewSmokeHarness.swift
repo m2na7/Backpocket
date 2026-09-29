@@ -235,8 +235,10 @@ final class ViewFixture {
     /// instead of the one being aimed at.
     @discardableResult
     func addImage(width: Int = 640, height: Int = 400, age: TimeInterval = 240) throws -> Item {
-        let full = try Self.png(width: width, height: height)
-        let thumbnail = try Self.png(width: 44, height: 28)
+        // A flat grey rather than zeroed bytes: a fully transparent thumbnail
+        // would draw nothing and make the ink check meaningless.
+        let full = try Fixture.png(width: width, height: height, fill: 0x80)
+        let thumbnail = try Fixture.png(width: 44, height: 28, fill: 0x80)
         return insert(
             Item(
                 content: "Image \(width)×\(height)",
@@ -282,19 +284,6 @@ final class ViewFixture {
         addNote("a note from last month", age: 20 * 86_400)
         addNote("a note from a while back", age: 200 * 86_400)
         addNote("a pinned note", age: 5 * 86_400, pinned: true)
-    }
-
-    static func png(width: Int, height: Int) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let plane = try #require(bitmap.bitmapData)
-        // A flat grey rather than zeroed bytes: a fully transparent thumbnail
-        // would draw nothing and make the ink check meaningless.
-        for index in 0..<(bitmap.bytesPerRow * height) { plane[index] = 0x80 }
-        return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 }
 

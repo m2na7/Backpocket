@@ -8,20 +8,6 @@ import Testing
 /// and this cache sits in front of it, in the one layer no other test reaches.
 @MainActor
 @Suite struct FileClipTests {
-    /// A real file, because `fileURLs` checks existence on every read and a
-    /// made-up path would make every case below return empty for the wrong
-    /// reason.
-    private func withRealFile(_ body: (URL) throws -> Void) throws {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appending(path: "backpocket-fileclip-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let file = directory.appending(path: "id_rsa")
-        try Data("private key".utf8).write(to: file)
-        try body(file)
-    }
-
     @Test func aFileCopyResolvesToItsURL() throws {
         try withRealFile { file in
             let item = Item(content: file.path(percentEncoded: false), isFileCopy: true)

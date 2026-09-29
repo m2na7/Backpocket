@@ -288,38 +288,35 @@ struct DetailContentSizingTests {
         }
     }
 
-    /// A flat PNG whose dimensions dwarf anything the card can draw. The
-    /// stored byte cap bounds the file, not the pixel count, so this is small
-    /// on disk and enormous decoded.
-    private func hugePNG() throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 4_000, pixelsHigh: 3_000,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let plane = try #require(bitmap.bitmapData)
-        let total = bitmap.bytesPerRow * 3_000
-        for i in stride(from: 0, to: total, by: 4) { plane[i] = 0x80 }
-        return try #require(bitmap.representation(using: .png, properties: [:]))
-    }
-
     /// The card is drawn from a decode capped to what the display can show,
     /// not from the full-size bitmap. That must be invisible: the capped
     /// image has to report the same point size, so the card lays out to
     /// exactly the same rectangle as an uncapped decode would.
+    ///
+    /// The cap is a parameter, so a small image under a smaller cap takes the
+    /// same path a retina screenshot does under the real one, without a
+    /// 12-megapixel fixture. The image fits inside `imageMax`, so the card
+    /// draws it at its own size: a decode whose `size` followed its pixels
+    /// would shrink the card, and fail the layout check below as well.
     @Test func acappedDecodeLaysOutToTheSameCardAsTheFullSizeImage() throws {
-        let data = try hugePNG()
+        let data = try Fixture.png(width: 400, height: 300)
         let imageMax = CGSize(width: 696, height: 840)
 
         let full = try #require(NSImage(data: data))
-        let capped = try #require(DetailPanel.cardImage(from: data, pixels: 1_680))
+        let capped = try #require(DetailPanel.cardImage(from: data, pixels: 100))
 
         #expect(capped.size == full.size)
+        #expect(capped.size == NSSize(width: 400, height: 300))
+        // Exactly the cap, which is what the function exists for: returning
+        // the full-size image, its own fallback, keeps all 400, and a decode
+        // that over-shrank would come in under it.
+        let rep = try #require(capped.representations.first as? NSBitmapImageRep)
+        #expect(max(rep.pixelsWide, rep.pixelsHigh) == 100)
 
         func card(_ image: NSImage) -> DetailContent {
             DetailContent(
                 text: "", highlighted: nil, language: nil, image: image,
-                imageMax: imageMax, imageStats: "4000×3000", meta: DetailMeta(item))
+                imageMax: imageMax, imageStats: "400×300", meta: DetailMeta(item))
         }
         #expect(
             NSHostingView(rootView: card(full)).fittingSize
@@ -329,12 +326,7 @@ struct DetailContentSizingTests {
     /// An image already smaller than the cap is handed through untouched —
     /// upscaling a small clip to the card's pixel budget would only blur it.
     @Test func animageBelowTheCapIsLeftAlone() throws {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 120, pixelsHigh: 90,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let data = try Fixture.png(width: 120, height: 90)
 
         let capped = try #require(DetailPanel.cardImage(from: data, pixels: 1_680))
         #expect(capped.size == NSSize(width: 120, height: 90))
@@ -360,5 +352,85 @@ struct DetailContentSizingTests {
         #expect(
             NSHostingView(rootView: prose).fittingSize
                 == NSHostingView(rootView: prose.measured).fittingSize)
+    }
+}
+
+/// Whether the card still describes a row, which decides whether it gets a
+/// grace period at all. Each case holds its own strong reference to the item
+/// throughout — the situation the check exists for, since a card whose item
+/// had simply been freed was already closed by its weak reference.
+@MainActor
+@Suite("DetailPanel liveness")
+struct DetailPanelLivenessTests {
+    private let store: Store
+    private let container: ModelContainer
+
+    init() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        container = try ModelContainer(for: Item.self, configurations: configuration)
+        store = Store(context: ModelContext(container), disposableLimit: { 1 })
+    }
+
+    @Test func nothingShownIsNotLive() {
+        #expect(!DetailPanel.isLive(nil))
+    }
+
+    /// Store never hands one out, but a model no context owns is not a row.
+    @Test func anItemNoStoreOwnsIsNotLive() {
+        #expect(!DetailPanel.isLive(Item(content: "loose")))
+    }
+
+    /// The reported case: ⌘⌫ with the pointer on the card. `Store.delete`
+    /// saves before the card is asked, and SwiftData clears `isDeleted` on
+    /// save, so a check on that flag alone kept the card up over the row.
+    @Test func aDeletedItemStopsBeingLiveOnceTheDeleteIsSaved() throws {
+        store.addNote("a note the card is showing")
+        let item = try #require(store.items.first)
+        #expect(DetailPanel.isLive(item))
+
+        store.delete(item)
+
+        #expect(!DetailPanel.isLive(item))
+    }
+
+    /// The half the flag still covers. Between a delete and its save the
+    /// model keeps its context, so only `isDeleted` says it is leaving.
+    /// `Store` always saves at once, so this goes straight to a context.
+    @Test func aDeleteNotYetSavedIsNotLive() throws {
+        let context = ModelContext(container)
+        let item = Item(content: "deleted, not yet saved")
+        context.insert(item)
+        try context.save()
+        #expect(DetailPanel.isLive(item))
+
+        context.delete(item)
+
+        #expect(item.modelContext != nil)
+        #expect(!DetailPanel.isLive(item))
+    }
+
+    /// An undone delete comes back as a new model, and that one is a row.
+    @Test func theRowAnUndoPutsBackIsLive() throws {
+        store.addNote("deleted, then restored")
+        store.delete(try #require(store.items.first))
+        #expect(store.undoDelete())
+
+        let restored = try #require(store.items.first)
+        #expect(DetailPanel.isLive(restored))
+    }
+
+    /// Trimming is a delete the user never asked for, and the card must
+    /// treat it like one.
+    @Test func aRowTrimmedPastTheCapIsNotLive() throws {
+        let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
+        store.add("older", source: source)
+        let older = try #require(store.items.first)
+        // The cap is one, so the next copy trims the first.
+        store.add("newer", source: source)
+        #expect(!store.items.contains { $0 === older })
+
+        #expect(!DetailPanel.isLive(older))
+        let newer = try #require(store.items.first)
+        #expect(DetailPanel.isLive(newer))
     }
 }

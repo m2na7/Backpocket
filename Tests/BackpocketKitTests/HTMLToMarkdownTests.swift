@@ -3,6 +3,11 @@ import Testing
 
 @testable import BackpocketKit
 
+/// Main-actor, as `convert` is: the depth cap is measured against the main
+/// thread's stack, and a case run on a cooperative-pool thread would be
+/// testing a walk the app never makes — one that crashes the whole test
+/// process, rather than failing, somewhere below the cap.
+@MainActor
 @Suite("HTMLToMarkdown")
 struct HTMLToMarkdownTests {
     @Test func headingsAndParagraphs() {
@@ -200,21 +205,5 @@ struct HTMLToMarkdownTests {
     @Test func emptyAndGarbageInputs() {
         #expect(HTMLToMarkdown.convert("") == nil)
         #expect(HTMLToMarkdown.convert("<script>x</script>") == nil)
-    }
-}
-
-@Suite("TokenEstimate")
-struct TokenEstimateTests {
-    @Test func asciiAveragesFourCharsPerToken() {
-        let text = String(repeating: "word", count: 100)
-        #expect(TokenEstimate.roughCount(text) == 100)
-    }
-
-    @Test func cjkCountsRoughlyOneTokenPerCharacter() {
-        #expect(TokenEstimate.roughCount("한국어테스트") == 6)
-    }
-
-    @Test func emptyIsZero() {
-        #expect(TokenEstimate.roughCount("") == 0)
     }
 }

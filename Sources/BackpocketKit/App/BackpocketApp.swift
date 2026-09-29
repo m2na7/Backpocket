@@ -54,14 +54,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
 
-        // Not `mainContext`: its main-actor assertion traps when first touched
-        // from `applicationDidFinishLaunching`. A context made by hand works,
-        // and Store is @MainActor so access stays single-threaded anyway.
+        #if DEBUG
+        // Before any window exists, so every one of them draws in it.
+        if let look = DebugLaunch.appearance {
+            NSApp.appearance = NSAppearance(named: look == "dark" ? .darkAqua : .aqua)
+        }
+        #endif
+
         // Read before anything can rewrite it: the bundle's localization is
         // fixed by now, and Settings compares against this to decide whether
         // a relaunch is actually pending.
         _ = AppLanguage.atLaunch
 
+        // Not `mainContext`: its main-actor assertion traps when first touched
+        // from `applicationDidFinishLaunching`. A context made by hand works,
+        // and Store is @MainActor so access stays single-threaded anyway.
         let store = Store(context: ModelContext(Persistence.makeContainer()))
         store.purgeExpired(days: ExpiryOption.current)
         self.store = store
@@ -74,7 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 store.addImage(data, source: source)
             }
         }
-        watcher.start()
+        if !isCaptureRun {
+            watcher.start()
+        }
 
         panel = BackpocketPanel(
             rootView: ContentView(
@@ -95,14 +104,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.detailPanel.hide()
         }
 
-        applyHotKey()
+        if !isCaptureRun {
+            applyHotKey()
 
-        if PasteBehavior.isAutomatic, !Paster.isTrusted {
-            Paster.requestAccessibility()
+            if PasteBehavior.isAutomatic, !Paster.isTrusted {
+                Paster.requestAccessibility()
+            }
         }
 
         #if DEBUG
         Task { await applyDebugLaunchOptions() }
+        #endif
+    }
+
+    /// See `DebugLaunch.isCapture`. Always false in a release build.
+    private var isCaptureRun: Bool {
+        #if DEBUG
+        DebugLaunch.isCapture
+        #else
+        false
         #endif
     }
 
@@ -268,14 +288,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func paste(_ item: Item) {
+        // Which representation leaves the app is decided by PasteFlavor,
+        // where it can be tested; the switch below only carries out the
+        // answer. Asked before anything else, so that an image with nothing
+        // left to paste leaves the panel as it was instead of closing it over
+        // a paste that never comes.
+        guard let flavor = PasteFlavor.flavor(for: item) else { return }
         store?.markUsed(item)
         // Order matters: the panel must close first so the previous app is
         // frontmost again and receives the paste.
         panel?.hide()
         watcher.suppressingOwnWrite {
-            // Which representation leaves the app is decided by PasteFlavor,
-            // where it can be tested; this switch only carries out the answer.
-            switch PasteFlavor.flavor(for: item) {
+            switch flavor {
             case .image(let data):
                 Paster.pasteImage(data)
             case .files(let urls):
@@ -296,14 +320,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // same reason: image capture completes off the main actor, and
         // opening the panel first would race the row into view.
         if DebugLaunch.seedDemo, let store, store.items.isEmpty {
-            await seedDemo(into: store)
+            await DemoSeed.seed(into: store, language: DebugLaunch.demoLanguage)
+        }
+        if let note = DebugLaunch.extraNote {
+            store?.addNote(note)
         }
 
         // --snapshot= implies a panel to capture. Without this it fell under
         // the guard and the process sat there forever, having written no PNG
         // and reported nothing — and CONTRIBUTING lists the two flags as
         // independent, so passing --snapshot= alone is the documented usage.
-        guard DebugLaunch.openPanel || DebugLaunch.snapshotPath != nil else { return }
+        guard
+            DebugLaunch.openPanel || DebugLaunch.snapshotPath != nil
+                || DebugLaunch.snapshotDirectory != nil
+        else { return }
 
         panel?.autoHidesOnResignKey = false
         togglePanel()
@@ -312,6 +342,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // includes anything else on screen.
         if let screen = NSScreen.main {
             panel?.setFrameTopLeftPoint(NSPoint(x: 40, y: screen.frame.maxY - 40))
+        }
+        if DebugLaunch.query != nil {
+            // Focusing a filled field selects all of it. A capture of typing
+            // should show the caret after the text instead, the way it sits
+            // while someone is still typing.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                if let editor = self?.panel?.firstResponder as? NSTextView {
+                    let end = (editor.string as NSString).length
+                    editor.setSelectedRange(NSRange(location: end, length: 0))
+                }
+            }
         }
         if DebugLaunch.openEditor, let first = store?.items.first(where: \.isNote) {
             edit(first)
@@ -322,176 +363,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let path = DebugLaunch.snapshotPath {
             snapshotPanel(to: path)
         }
+        if let directory = DebugLaunch.snapshotDirectory {
+            snapshotWindows(to: URL(fileURLWithPath: directory, isDirectory: true))
+        }
     }
 
-    /// Fills an empty store with content that shows the product off: real
-    /// source apps so icons resolve, varied content kinds, one pin, one image.
-    private func seedDemo(into store: Store) async {
-        let chrome = CopySource(name: "Google Chrome", bundleID: "com.google.Chrome")
-        let cursor = CopySource(name: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92")
-        let code = CopySource(name: "Visual Studio Code", bundleID: "com.microsoft.VSCode")
-        let terminal = CopySource(name: "Terminal", bundleID: "com.apple.Terminal")
-        let slack = CopySource(name: "Slack", bundleID: "com.tinyspeck.slackmacgap")
-        let figma = CopySource(name: "Figma", bundleID: "com.figma.Desktop")
-        let notion = CopySource(name: "Notion", bundleID: "notion.id")
+    /// Every window the flags opened, each drawn to its own PNG, with the
+    /// frames that place them relative to one another in frames.json. A store
+    /// picture composes them itself: the detail card and the editor are
+    /// windows beside the panel, and one capture of the panel leaves them out.
+    /// Later than `snapshotPanel`, so a selected row's card has had its dwell.
+    private func snapshotWindows(to directory: URL) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            defer { NSApplication.shared.terminate(nil) }
+            guard let self else { return }
+            try? FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true)
 
-        // Oldest first: every add lands at the front, so the last call ends
-        // up at the top of the list.
-        store.addNote("First sketch — clipboard history and notes in one panel")
-        store.addNote("Design review Thu 2pm — bring the empty-state options")
-        store.add("https://react.dev/reference/react/useSyncExternalStore", source: chrome)
-        store.add("#2F81F7", source: figma)
-        store.add(
-            """
-            type Result<T, E = Error> =
-              | { ok: true; value: T }
-              | { ok: false; error: E }
-            """,
-            source: cursor
-        )
-        store.add("https://www.typescriptlang.org/docs/handbook/2/generics.html", source: chrome)
-        store.addNote("Standup 10:30 — demo the panel, collect feedback")
-        store.add("pnpm dlx shadcn@latest add dialog", source: terminal)
-        store.add(
-            """
-            export function useDebounced<T>(value: T, delay = 300): T {
-              const [debounced, setDebounced] = useState(value)
-              useEffect(() => {
-                const id = setTimeout(() => setDebounced(value), delay)
-                return () => clearTimeout(id)
-              }, [value, delay])
-              return debounced
+            var frames: [[String: Any]] = []
+            for window in NSApplication.shared.windows where window.isVisible {
+                let role: String
+                if window === panel {
+                    role = "panel"
+                } else if window is EditPanel {
+                    role = "editor"
+                } else if window.contentViewController is NSTabViewController {
+                    role = "settings"
+                } else if window is NSPanel, window.ignoresMouseEvents {
+                    role = "detail"
+                } else {
+                    continue
+                }
+                guard let view = window.contentView, let bitmap = captureBitmap(of: view)
+                else { continue }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try? bitmap.representation(using: .png, properties: [:])?
+                    .write(to: directory.appending(path: "\(role).png"))
+                frames.append([
+                    "role": role,
+                    "x": window.frame.minX, "y": window.frame.minY,
+                    "width": window.frame.width, "height": window.frame.height,
+                    "scale": window.backingScaleFactor,
+                ])
             }
-            """,
-            source: cursor
-        )
-        store.add("https://github.com/m2na7/Backpocket/pull/12", source: chrome)
-        store.add(
-            "{\"name\": \"backpocket\", \"version\": \"1.4.0\", \"channels\": [\"beta\", \"stable\"]}",
-            source: code
-        )
-        store.addNote("Ask design about the empty state — it reads too quiet")
-        store.add("git rebase -i origin/main --autosquash", source: terminal)
-        store.add(
-            "Can you take the flaky test in CI? It fails ~1 in 5 on the runner.",
-            source: slack
-        )
-        store.add("https://news.ycombinator.com/item?id=41802570", source: chrome)
-        store.add(
-            """
-            const Panel = forwardRef<HTMLDivElement, PanelProps>(
-              ({ items, onSelect }, ref) => (
-                <div ref={ref} role="listbox">
-                  {items.map((item) => (
-                    <Row key={item.id} item={item} onSelect={onSelect} />
-                  ))}
-                </div>
-              )
-            )
-            """,
-            source: cursor
-        )
-        store.addNote("Release notes draft: image clips, faster search, new hotkey")
-        store.add("https://vercel.com/docs/functions/streaming", source: chrome)
-        store.add(
-            """
-            ## Panel keyboard
-            - `Enter` pastes the selected clip
-            - `Cmd+Enter` pastes a note
-            """,
-            source: notion
-        )
-        store.add("npm error ERESOLVE could not resolve peer react@^19.0.0", source: terminal)
-        store.addNote("Ship 0.2 before the conference — cut scope if it slips")
-        store.add(
-            "The best interface is the one you never notice — it simply keeps up.",
-            source: chrome
-        )
-        if let png = Self.demoGradientPNG() {
-            store.addImage(png, source: figma)
-            // Image capture hashes and thumbnails off the main actor, so the
-            // row is not in `items` yet. Without this wait the spread below
-            // skips it and the demo image alone reads "now" — which makes the
-            // screenshots this flag exists for unreproducible.
-            await store.imageCapturesDidFinish()
-        }
-
-        for prefix in ["git rebase", "#2F81F7"] {
-            if let pinned = store.items.first(where: { $0.content.hasPrefix(prefix) }) {
-                store.togglePin(pinned)
+            if let json = try? JSONSerialization.data(
+                withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
+            {
+                try? json.write(to: directory.appending(path: "frames.json"))
             }
         }
-
-        // Every add stamped usedAt with "now". Clips and notes are spread
-        // differently on purpose: clips expire (default seven days) and would
-        // be purged out of the demo before it could be filmed, while notes
-        // never expire and are what the notes column groups into Today, Last
-        // 7 Days, months and years. So the deep past belongs to the notes and
-        // the clips stay inside the retention window.
-        //
-        // Store keeps `items` sorted by usedAt descending, so both passes
-        // assign strictly descending dates within their own kind.
-        var clipDate = Date().addingTimeInterval(-120)
-        var clipGap: TimeInterval = 900
-        var noteAge: [TimeInterval] = [
-            60 * 30,
-            3600 * 26,
-            86400 * 4,
-            86400 * 26,
-            86400 * 200,
-            86400 * 400,
-        ]
-        for item in store.items {
-            if item.isNote {
-                let age = noteAge.isEmpty ? 86400 * 500 : noteAge.removeFirst()
-                item.usedAt = Date().addingTimeInterval(-age)
-            } else {
-                item.usedAt = clipDate
-                clipDate -= clipGap
-                // Widening, but capped well inside the seven-day default so
-                // nothing in the demo is eligible for expiry.
-                clipGap = min(clipGap * 1.6, 86400 * 0.9)
-            }
-            item.createdAt = item.usedAt
-        }
-        store.persistDemoSeed()
     }
 
-    /// 640×400 gradient rendered with CoreGraphics — generated at runtime so
-    /// no image asset ships in the bundle for a debug-only feature.
-    private static func demoGradientPNG() -> Data? {
-        let width = 640, height = 400
-        guard
-            let space = CGColorSpace(name: CGColorSpace.sRGB),
-            let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: space,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ),
-            let gradient = CGGradient(
-                colorsSpace: space,
-                colors: [
-                    CGColor(red: 0.30, green: 0.41, blue: 0.95, alpha: 1),
-                    CGColor(red: 0.89, green: 0.37, blue: 0.62, alpha: 1),
-                ] as CFArray,
-                locations: nil
-            )
-        else { return nil }
-
-        context.drawLinearGradient(
-            gradient,
-            start: .zero,
-            end: CGPoint(x: width, y: height),
-            options: []
-        )
-
-        return context.makeImage().flatMap {
-            NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:])
+    /// A bitmap at the window's own scale, or at `--snapshot-scale=` when a
+    /// store picture needs the interface larger than a Retina screen draws it.
+    private func captureBitmap(of view: NSView) -> NSBitmapImageRep? {
+        guard let scale = DebugLaunch.snapshotScale else {
+            return view.bitmapImageRepForCachingDisplay(in: view.bounds)
         }
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(view.bounds.width * scale),
+            pixelsHigh: Int(view.bounds.height * scale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+        bitmap?.size = view.bounds.size
+        return bitmap
     }
 
     /// Whichever window the other debug flags opened.

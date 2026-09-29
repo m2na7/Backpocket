@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 
 /// Every user-facing preference, as cases rather than loose constants: the
@@ -335,12 +334,6 @@ enum IgnoredApps {
         set { PreferenceStore.defaults.set(newValue, forKey: PreferenceKey.ignoredApps) }
     }
 
-    /// Removes the key rather than storing an empty array, so a reset leaves
-    /// the preference absent exactly as a fresh install has it.
-    static func reset() {
-        PreferenceStore.defaults.removeObject(forKey: PreferenceKey.ignoredApps)
-    }
-
     static func contains(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
         return bundleIDs.contains(bundleID)
@@ -352,13 +345,6 @@ enum IgnoredApps {
             let name = Bundle(url: url)?.infoDictionary?["CFBundleName"] as? String
         else { return bundleID }
         return name
-    }
-
-    static func icon(for bundleID: String) -> NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return nil
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
     }
 }
 

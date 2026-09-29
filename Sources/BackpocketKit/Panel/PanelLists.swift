@@ -1,19 +1,18 @@
 import Foundation
 
-/// What the panel shows, derived from the store and the query. Pure: the same
-/// inputs always produce the same lists, so the partition and the note
-/// sectioning can be tested without standing up a view.
+/// What the panel shows, derived from the store — by way of its
+/// `PanelIndex` — and the query. Pure: the same inputs always produce the
+/// same lists, so the partition and the note sectioning can be tested without
+/// standing up a view.
 struct PanelLists {
     var clips: [Item] = []
     var links: [Item] = []
     var notes: [Item] = []
     var noteSections: [NoteSection] = []
 
-    /// ponytail: only the head of each item is searched — a full-content scan
-    /// is O(items × 200k chars) per keystroke; build an index if matches past
-    /// the cap ever matter.
-    private static let searchCap = 10_000
-
+    /// Straight from a list of items, indexing them on the way. The panel
+    /// goes through `PanelContents.make(index:)` instead, which needs the
+    /// matches for the selection's identifiers as well as for these lists.
     @MainActor
     static func make(
         items: [Item],
@@ -21,60 +20,70 @@ struct PanelLists {
         links collection: LinkCollection,
         now: Date = Date()
     ) -> PanelLists {
-        func matching(_ items: [Item]) -> [Item] {
-            guard !query.isEmpty else { return items }
-            return items.filter {
-                $0.content.prefix(searchCap).localizedCaseInsensitiveContains(query)
-            }
-        }
+        let matches = Matches(PanelIndex(items: items), query: query, links: collection)
+        return PanelLists(matches, now: now)
+    }
+}
 
-        var lists = PanelLists()
+extension PanelLists {
+    /// The entries each pane shows, before they are split into the items it
+    /// draws and the identifiers the selection walks (`PaneRows`).
+    struct Matches {
+        var clips: [PanelIndex.Entry] = []
+        var links: [PanelIndex.Entry] = []
+        var notes: [PanelIndex.Entry] = []
 
-        // Partition after the query narrowing, in one pass — isLink is cheap
-        // but not free, and this runs on every keystroke.
-        let history = matching(items.filter { !$0.isNote })
-        switch collection {
-        case .keep:
-            lists.clips = history
-        case .separate:
-            var rest: [Item] = []
-            var linked: [Item] = []
-            for item in history {
-                if item.isLink {
-                    linked.append(item)
-                } else {
-                    rest.append(item)
+        /// Narrows by the query and partitions in one pass over the index,
+        /// keeping the index's order — the store's — within every list.
+        init(_ index: PanelIndex, query: String, links collection: LinkCollection) {
+            for entry in index.entries {
+                guard query.isEmpty || entry.haystack.localizedCaseInsensitiveContains(query)
+                else { continue }
+
+                if entry.isNote {
+                    notes.append(entry)
+                    continue
+                }
+                switch collection {
+                case .keep:
+                    clips.append(entry)
+                case .separate:
+                    if entry.isLink {
+                        links.append(entry)
+                    } else {
+                        clips.append(entry)
+                    }
+                case .both:
+                    // The same rows in both lists, deliberately: everything
+                    // downstream — the highlight, the paste stack, ⌘1..9 — is
+                    // scoped to a pane, so one item appearing twice is two
+                    // rows, not two items.
+                    clips.append(entry)
+                    if entry.isLink { links.append(entry) }
                 }
             }
-            lists.clips = rest
-            lists.links = linked
-        case .both:
-            // The same rows in both lists, deliberately: everything
-            // downstream — the highlight, the paste stack, ⌘1..9 — is scoped
-            // to a pane, so one item appearing twice is two rows, not two
-            // items.
-            lists.clips = history
-            lists.links = history.filter(\.isLink)
         }
+    }
 
-        lists.notes = matching(items.filter(\.isNote))
+    @MainActor
+    init(_ matches: Matches, now: Date) {
+        clips = matches.clips.map(\.item)
+        links = matches.links.map(\.item)
+        notes = matches.notes.map(\.item)
 
         // The store hands notes over already ordered, so equal groups arrive
-        // adjacent and a run-merger is enough — no bucketing pass.
-        for item in lists.notes {
-            let group =
-                item.isPinned ? NoteGroup.pinned : NoteGroup.group(for: item.usedAt, now: now)
-            let row = NoteRowData(
-                item: item,
-                timeLabel: NoteGroup.rowLabel(for: item.usedAt, now: now)
-            )
-            if lists.noteSections.last?.group == group {
-                lists.noteSections[lists.noteSections.count - 1].rows.append(row)
+        // adjacent and a run-merger is enough — no bucketing pass. One clock
+        // for the whole list, so the date math is done once and each day is
+        // formatted once rather than once per note.
+        var clock = NoteClock(now: now)
+        for entry in matches.notes {
+            let group = entry.isPinned ? NoteGroup.pinned : clock.group(for: entry.usedAt)
+            let row = NoteRowData(item: entry.item, timeLabel: clock.rowLabel(for: entry.usedAt))
+            if noteSections.last?.group == group {
+                noteSections[noteSections.count - 1].rows.append(row)
             } else {
-                lists.noteSections.append(NoteSection(group: group, rows: [row]))
+                noteSections.append(NoteSection(group: group, rows: [row]))
             }
         }
-
-        return lists
     }
 }

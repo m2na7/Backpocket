@@ -137,7 +137,9 @@ final class DetailPanel {
     private func detailContent(
         for item: Item, limit: NSSize, decodePixels: Int
     ) -> DetailContent {
-        if let data = item.imageData, let image = Self.cardImage(from: data, pixels: decodePixels) {
+        if let data = item.loadImageData(),
+            let image = Self.cardImage(from: data, pixels: decodePixels)
+        {
             // Decoded here, once per show — never during a render pass.
             return DetailContent(
                 text: "",
@@ -253,6 +255,11 @@ final class DetailPanel {
         pointerWatch = nil
         shownItem = nil
         panel?.orderOut(nil)
+        // The hosting view holds the card's content, which for an image is a
+        // bitmap decoded to the card's size — several megabytes that would
+        // otherwise stay resident until the next card, however long the app
+        // sits idle. show() always installs a fresh one, so nothing is lost.
+        panel?.contentView = nil
     }
 
     /// Keeps the card open while the mouse is moving onto it. The card never
@@ -295,8 +302,26 @@ final class DetailPanel {
     /// nothing left to grant a grace period to — ⌘⌫ with the pointer resting
     /// on the card would otherwise leave it standing over a deleted row.
     private var isAlive: Bool {
-        guard let shownItem else { return false }
-        return !shownItem.isDeleted
+        Self.isLive(shownItem)
+    }
+
+    /// Whether `item` is still a row in the store.
+    ///
+    /// Both conditions are needed, and `isDeleted` alone is the one that
+    /// looks sufficient and is not. SwiftData clears it again once the
+    /// context saves, and `Store` saves inside every delete, trim, expiry and
+    /// clear, so by the time this is asked a deleted row reads as not
+    /// deleted. What does change for good is its `modelContext`, which the
+    /// save detaches. `isDeleted` still covers the moment between the delete
+    /// and the save, and a save that failed.
+    ///
+    /// The weak `shownItem` does not cover it on its own: it goes nil only
+    /// with the last strong reference, and anything else still holding the
+    /// item — an editor that had it open, the list until it re-renders —
+    /// would keep the card up over the deleted row.
+    static func isLive(_ item: Item?) -> Bool {
+        guard let item else { return false }
+        return item.modelContext != nil && !item.isDeleted
     }
 
     private func pointerIsInside(_ panel: NSPanel) -> Bool {

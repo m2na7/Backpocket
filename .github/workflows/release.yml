@@ -19,24 +19,30 @@ permissions:
 env:
   # Same pin as ci.yml, and for the same reason: a tag build must use the
   # toolchain CI has been proving green on, not whatever the image defaults to
-  # on the day someone tags. Change both files together.
+  # on the day someone tags. Change every workflow together.
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
 jobs:
+  # Bounded for the same reason as ci.yml's jobs: a hung test would otherwise
+  # hold the runner for GitHub's 360-minute default.
   test:
     runs-on: macos-26
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: swift build
       - run: swift test
       - run: swift format lint --strict --recursive Sources Tests
       - run: ./scripts/check-localization.sh
 
+  # Room for a universal build plus notarization, which is itself capped at
+  # 15 minutes below.
   release:
     needs: test
     runs-on: macos-26
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
@@ -44,18 +50,42 @@ jobs:
       # steps can gate on it. Empty secret == unsigned (ad-hoc) release.
       HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERT_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # BUILD_NUMBER is the commit count; needs full history.
           fetch-depth: 0
 
       - name: Derive version
+        env:
+          # Through env, not interpolated into the script: ${{ }} is expanded
+          # before the shell reads the script, so a quote in the typed text
+          # could end the string and run the rest as a command.
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ inputs.version }}"
+          VERSION="$INPUT_VERSION"
           case "$VERSION" in v*) echo "pass 0.1.0, not v0.1.0" >&2; exit 1 ;; esac
+          # It becomes the tag, the bundle version and part of the download
+          # URL the appcast names, so anything but a plain version stops here.
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+            { echo "version must look like 0.1.0, got '$VERSION'" >&2; exit 1; }
+          # A version already tagged or released stops here too, as it does in
+          # release.sh: publishing onto an existing tag would replace that
+          # release's assets under the users who already have it.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already tagged" >&2; exit 1
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "a release for v$VERSION already exists" >&2; exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          # The release body is this version's CHANGELOG.md entry, as in
+          # release.sh. Taken now so a missing entry stops the run before the
+          # build and the notarization are paid for, not at publish time.
+          ./scripts/changelog-section.sh "$VERSION" > "$RUNNER_TEMP/notes.md" ||
+            { echo "add a ## [$VERSION] entry to CHANGELOG.md first" >&2; exit 1; }
 
       - name: Import signing certificate
         if: env.HAS_SIGNING == 'true'
@@ -79,10 +109,12 @@ jobs:
           # The full identity name, because build.sh keys the hardened runtime
           # and the timestamp off a "Developer ID Application:" prefix — and
           # because signing has to happen inside build.sh, not after it. The
-          # app embeds Sparkle's framework, its XPC services and its updater,
-          # and signing the outer bundle does not touch any of them: re-signing
-          # afterwards would ship helpers still carrying the ad-hoc signature
-          # build.sh gave them, which Gatekeeper rejects on the user's machine.
+          # app embeds Sparkle's framework and its updater, plus its XPC
+          # services when Info.plist enables them (build.sh drops them
+          # otherwise), and signing the outer bundle does not touch any of
+          # them: re-signing afterwards would ship helpers still carrying the
+          # ad-hoc signature build.sh gave them, which Gatekeeper rejects on
+          # the user's machine.
           IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" |
             sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
           [ -n "$IDENTITY" ] || { echo "cert imported but no identity found" >&2; exit 1; }
@@ -99,6 +131,19 @@ jobs:
           BACKPOCKET_PUBLISHING: "1"
         run: ./build.sh release
 
+      # The checks release.sh makes on the same bundle, so the fallback path
+      # cannot publish what the usual one would refuse.
+      - name: Check the bundle
+        run: |
+          lipo -archs build/Backpocket.app/Contents/MacOS/Backpocket | grep -q x86_64 ||
+            { echo "binary is not universal" >&2; exit 1; }
+          codesign --verify --deep --strict build/Backpocket.app
+
+      # Every zip below leaves out resource forks and extended attributes.
+      # The only ones in the bundle are com.apple.provenance, which
+      # --sequesterRsrc used to ship as a __MACOSX sidecar per file; nothing
+      # that matters lives there, because the signatures are embedded or in
+      # _CodeSignature and the stapled ticket is a file in the bundle.
       - name: Notarize and staple
         if: env.HAS_SIGNING == 'true'
         env:
@@ -106,7 +151,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
           xcrun notarytool submit build/Backpocket.zip \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
@@ -116,14 +161,24 @@ jobs:
           # The first zip was only the notarization vehicle; the stapled
           # ticket lives in the .app, so re-zip to actually ship it.
           rm build/Backpocket.zip
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
+          # The archive is what gets published, not the folder it was made
+          # from: unpacked the way Sparkle unpacks it, it has to come out
+          # signed and stapled, as release.sh checks.
+          ditto -x -k build/Backpocket.zip "$RUNNER_TEMP/unpacked"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unpacked/Backpocket.app"
+          xcrun stapler validate "$RUNNER_TEMP/unpacked/Backpocket.app"
+          # What a user's Mac asks before opening it. Catches a staple that
+          # silently did not take.
+          spctl -a -vvv -t install build/Backpocket.app 2>&1 | grep -q accepted ||
+            { echo "Gatekeeper would reject this build" >&2; exit 1; }
 
       - name: Ad-hoc sign
         if: env.HAS_SIGNING != 'true'
         run: |
           # Apple Silicon refuses to launch unsigned binaries; ad-hoc is the floor.
           codesign --force --sign - build/Backpocket.app
-          ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app build/Backpocket.zip
+          ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app build/Backpocket.zip
 
       - name: Delete keychain
         if: always() && env.HAS_SIGNING == 'true'
@@ -136,7 +191,7 @@ jobs:
       # Published rather than kept as an artifact: artifacts expire, and a
       # crash report can arrive long after that.
       - name: Package the symbols
-        run: ditto -c -k --sequesterRsrc --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
+        run: ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent build/Backpocket.app.dSYM build/Backpocket.dSYM.zip
 
       # The appcast is what installed copies read to learn a new version
       # exists, and its EdDSA signature is what makes them willing to install
@@ -168,16 +223,21 @@ jobs:
             build/appcast
           rm -f "$RUNNER_TEMP/sparkle_key"
           cp build/appcast/appcast.xml build/appcast.xml
+          # An entry without a signature is one every client refuses.
+          grep -q edSignature build/appcast.xml ||
+            { echo "appcast has no signature" >&2; exit 1; }
 
       - name: Publish release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ env.TAG }}
           files: |
             build/Backpocket.zip
             build/Backpocket.dSYM.zip
             build/appcast.xml
-          generate_release_notes: true
+          # Not generate_release_notes: that summarises merged pull requests,
+          # and a project developed without them gets an empty body.
+          body_path: ${{ runner.temp }}/notes.md
           # Unsigned builds go out as prereleases: users must clear quarantine
           # by hand, so don't present them as the real thing.
           prerelease: ${{ env.HAS_SIGNING != 'true' }}

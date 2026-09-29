@@ -99,11 +99,13 @@ struct ContentView: View {
 
     // Several places read the lists within one render pass, so computed
     // properties would re-run the same filter every time. Filter once, only
-    // when the source or the query changes.
+    // when the source or the query changes — and read the items themselves
+    // only when the source does (see `PanelIndex`).
     @State private var contents = PanelContents()
 
     /// Hands the highlight to the keyboard: clears any hover and ignores
-    /// hover entries until the pointer genuinely moves (see hoverAnchor).
+    /// hover entries until the pointer genuinely moves (see
+    /// `HoverMachine.anchor`).
     private func suppressHover() {
         hoverState.suppress(at: NSEvent.mouseLocation)
     }
@@ -129,8 +131,17 @@ struct ContentView: View {
     /// might be reading, and a `keyboardDriven:` flag picked which of two
     /// hover behaviours the caller inherited. Both are now stated by the
     /// caller, which is the only place that knows what changed underneath.
-    private func recomputeLists() {
-        contents = PanelContents.make(items: store.items, query: query, links: linkCollection)
+    ///
+    /// `rebuildingIndex` retakes the snapshot the lists are filtered from even
+    /// when the store has not changed; see `reset()`.
+    private func recomputeLists(rebuildingIndex: Bool = false) {
+        // The index is checked against the store here, at the moment of use,
+        // rather than retaken in the revision handler: `convertToNotes`
+        // changes the store and recomputes in the same turn, before that
+        // handler has run, and an index from before the drop would still
+        // file the converted clip under clips.
+        let index = rebuildingIndex ? PanelIndex(store) : contents.index.refreshed(from: store)
+        contents = PanelContents.make(index: index, query: query, links: linkCollection)
 
         // Every store mutation lands here via store.revision, so this is where
         // a handful notices that one of its picks is gone.
@@ -444,26 +455,19 @@ struct ContentView: View {
                 // the height that actually exists: the frame is rigid, so at a
                 // short panel it would otherwise run past the footer and leave
                 // the clipboard list with no room at all.
-                .frame(height: linksSectionHeight(in: height))
+                //
+                // `LinkRows` is read live on every layout pass, not
+                // snapshotted: it only sizes this section, so nothing the user
+                // is aiming at moves.
+                .frame(
+                    height: PanelMetrics.cappedLinksSectionHeight(
+                        linkCount: contents.links.count,
+                        linkRows: LinkRows.current,
+                        available: height
+                    )
+                )
             }
         }
-    }
-
-    /// Never more than the reader's height less a header and one clip row —
-    /// the clipboard list must always keep a row.
-    ///
-    /// `LinkRows` is read live on every layout pass, not snapshotted: it only
-    /// sizes this section, so nothing the user is aiming at moves.
-    private func linksSectionHeight(in available: CGFloat) -> CGFloat {
-        let desired =
-            contents.links.isEmpty
-            ? PanelMetrics.emptyLinksHeight
-            : PanelMetrics.linksSectionHeight(rows: min(contents.links.count, LinkRows.current))
-        let ceiling = max(
-            available - PanelMetrics.sectionHeader - PanelMetrics.rowPitch - 1,
-            PanelMetrics.rowPitch
-        )
-        return min(desired, ceiling)
     }
 
     // MARK: Right — notes, time-grouped
@@ -763,7 +767,9 @@ struct ContentView: View {
             key: press.key,
             isRepeat: press.phase != .down,
             modifiers: press.modifiers,
-            matchingShortcut: { PanelShortcut.match(press) }
+            matchingShortcut: { PanelShortcut.match(press) },
+            physicalKey: { PanelShortcut.physicalKeyName() },
+            isComposing: { PanelKeyPress.isComposing(NSApp.keyWindow?.firstResponder) }
         )
         return perform(PanelKeyboard.command(for: reduced, in: keyContext))
     }
@@ -833,8 +839,8 @@ struct ContentView: View {
     }
 
     /// Activating a link honors its configured default action; everything
-    /// else pastes. Click, ⌘1..9 and ⌘⇧1..9 all come through here, so a link
-    /// never behaves one way under the mouse and another under the keyboard.
+    /// else pastes. Click and ⌘1..9 both come through here, so a link never
+    /// behaves one way under the mouse and another under the keyboard.
     private func activateItem(_ item: Item) {
         if item.isLink, LinkClickAction.current == .open {
             onOpenLink(item)
@@ -957,7 +963,11 @@ struct ContentView: View {
         // outright, anchor and pending entry included, which is strictly more
         // than either of the two the list callers pick between.
         dismissDetail()
-        recomputeLists()
+        // A fresh index on every open, whether or not the revision moved: only
+        // keystrokes reuse one. Opening is where the lists were always rebuilt
+        // from the store, so should a change ever slip past the revision, it
+        // lasts until the panel next opens and no longer.
+        recomputeLists(rebuildingIndex: true)
         openTick += 1
         resetHover()
         showsShortcuts = false
@@ -968,6 +978,30 @@ struct ContentView: View {
         }
         #endif
         selection.reset(to: contents.rows)
+        #if DEBUG
+        applyDebugSelection()
+        #endif
         fieldFocused = true
     }
+
+    #if DEBUG
+    /// The pane, row and ⌘ state the capture flags ask for, on top of the
+    /// opening state `reset` just established. A user-made selection, so the
+    /// detail card grows against it after the usual dwell.
+    private func applyDebugSelection() {
+        let panes: [String: Pane] = ["clips": .clips, "links": .links, "notes": .notes]
+        if let name = DebugLaunch.pane, let pane = panes[name] {
+            selection.focus(pane, in: contents.rows, origin: .user)
+        }
+        if let row = DebugLaunch.selectRow {
+            let ids = contents.rows[selection.pane]
+            if ids.indices.contains(row) {
+                selection.select(ids[row], in: selection.pane, origin: .user)
+            }
+        }
+        if DebugLaunch.showsShortcuts {
+            showsShortcuts = true
+        }
+    }
+    #endif
 }

@@ -9,34 +9,45 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the previous run for the same ref.
+# A new push to a pull request supersedes the run before it. Runs on main are
+# never cancelled: each commit there gets a verdict, which bisecting needs and
+# which is the only record of whether the HEAD release.sh tags was green. They
+# are grouped by commit rather than by branch, because a shared group would
+# still cancel a queued run when a third push arrived behind it.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Pinned, not defaulted. Without this the runner picks whatever Xcode the
   # image currently ships, so `make lint` passing locally proves nothing about
   # CI and the answer changes silently when GitHub bumps the image. The
   # formatter in particular is a toolchain component: its output moves between
-  # Swift releases. Keep this equal to the version in CONTRIBUTING.md and
-  # .swift-version, and check the image inventory before changing it:
+  # Swift releases. Keep this equal to the version in CONTRIBUTING.md,
+  # .swift-version and the other workflows, and check the image inventory
+  # before changing it:
   # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
+# Every job normally finishes in a few minutes. The limits are for a hang
+# — a test awaiting a callback that never comes, a loop a regression made
+# endless — which would otherwise hold a macOS runner for GitHub's 360-minute
+# default.
 jobs:
   build-and-test:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: swift --version
       - run: swift build
       - run: swift test
 
   lint:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # swift-format ships with the toolchain; no install step.
       - run: swift format lint --strict --recursive Sources Tests
       # A string missing from one .lproj renders as its raw identifier rather
@@ -48,18 +59,84 @@ jobs:
   # broken tag rather than a red PR.
   package:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: swift build -c release
       # No signing identity on the runner, so build.sh falls back to ad-hoc.
       # That is the same path an unsigned release takes, and it is enough to
-      # prove the bundle assembles: binary, Info.plist, all four .lproj.
+      # prove the bundle assembles: binary, Info.plist, the icon build.sh
+      # packs from the asset catalog, all four .lproj.
       - run: ./build.sh release
       - name: Check the bundle is complete
         run: |
           test -x build/Backpocket.app/Contents/MacOS/Backpocket
           test -f build/Backpocket.app/Contents/Info.plist
+          test -s build/Backpocket.app/Contents/Resources/AppIcon.icns
           for lang in en ko ja zh-Hans; do
             test -f "build/Backpocket.app/Contents/Resources/$lang.lproj/Localizable.strings"
           done
+          # build.sh drops Sparkle's XPC services unless Info.plist enables
+          # one with a SUEnable*Service key. A change that turns such a key
+          # on removes this check as well.
+          test ! -e build/Backpocket.app/Contents/Frameworks/Sparkle.framework/Versions/Current/XPCServices
+          # Removing part of a framework can leave one of its top-level
+          # symlinks pointing at nothing, and codesign --verify passes such a
+          # bundle. find -L follows every link, so only the broken ones still
+          # read as links. The listing goes through a file so that a find
+          # which fails stops the step instead of reading as an empty one.
+          find -L build/Backpocket.app -type l > "$RUNNER_TEMP/dangling.txt"
+          if [ -s "$RUNNER_TEMP/dangling.txt" ]; then
+            echo "the bundle has dangling symlinks:" >&2
+            cat "$RUNNER_TEMP/dangling.txt" >&2
+            exit 1
+          fi
           codesign --verify --deep --strict build/Backpocket.app
+
+  # The App Store variant is a different program at compile time: no
+  # Sparkle, a stub Updater, and a paste default of its own. Nothing else
+  # compiles it before scripts/appstore.sh does at submission time, so a
+  # break there would otherwise surface as a failed submission rather than
+  # a red PR. build.sh itself cannot run here — the provisioning profile it
+  # requires is not in the repository — so this checks the parts it builds
+  # from.
+  mas:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      # Job-level, because every swift invocation re-reads Package.swift and
+      # that is where the variant is decided. The scratch path is the one
+      # build.sh and `make test-mas` use.
+      BACKPOCKET_MAS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: swift build -c release --scratch-path .build/mas
+      # The check passes when grep finds nothing, so a binary that is not
+      # where the build step put it, or an otool that failed, must fail the
+      # step on its own instead of handing grep an empty listing. The shell
+      # has no pipefail, which is why the listing goes through a file.
+      - name: Check the store binary links no Sparkle
+        run: |
+          bin="$(swift build -c release --scratch-path .build/mas --show-bin-path)/Backpocket"
+          test -x "$bin" || { echo "no store binary at $bin" >&2; exit 1; }
+          otool -L "$bin" > "$RUNNER_TEMP/links.txt"
+          if grep -qi sparkle "$RUNNER_TEMP/links.txt"; then
+            echo "the App Store build links Sparkle" >&2
+            exit 1
+          fi
+      # The store reads the icon from this catalog and rejects an upload
+      # without the CFBundleIconName actool writes, so compile it the way
+      # build.sh does.
+      - name: Compile the asset catalog
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          xcrun actool packaging/Assets.xcassets \
+            --compile "$RUNNER_TEMP/assets" \
+            --app-icon AppIcon \
+            --output-partial-info-plist "$RUNNER_TEMP/actool.plist" \
+            --platform macosx --minimum-deployment-target 14.0 \
+            --optimization space \
+            --output-format human-readable-text
+          test -s "$RUNNER_TEMP/assets/Assets.car"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$RUNNER_TEMP/actool.plist"
+      - run: swift test --scratch-path .build/mas

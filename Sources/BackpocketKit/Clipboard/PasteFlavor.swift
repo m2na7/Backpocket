@@ -23,7 +23,10 @@ enum PasteFlavor: Equatable {
     ///
     /// Images first: an image item's `content` is only a placeholder such as
     /// "Image 4×3", so any other branch winning would paste that string
-    /// instead of the user's screenshot.
+    /// instead of the user's screenshot. The same goes for an image whose
+    /// bytes are gone — its row deleted while a reference to it was still on
+    /// screen — so that one answers nil, nothing to paste, rather than
+    /// falling through.
     ///
     /// Files second, and only through `fileURLs`, which re-checks the stored
     /// flag and the file's existence on every read — a stale flag never
@@ -31,9 +34,12 @@ enum PasteFlavor: Equatable {
     ///
     /// Text last, as the answer that is always safe to give.
     @MainActor
-    static func flavor(for item: Item) -> PasteFlavor {
-        if let imageData = item.imageData {
+    static func flavor(for item: Item) -> PasteFlavor? {
+        if let imageData = item.loadImageData() {
             return .image(imageData)
+        }
+        if item.isImage {
+            return nil
         }
         let files = item.fileURLs
         if !files.isEmpty {

@@ -8,17 +8,19 @@ Thanks for helping. A few ground rules keep the project easy to maintain.
 - Xcode 26.4.1 (Swift 6.3.1). CI pins exactly this version, so a different
   toolchain can format code that CI's `swift format lint` then rejects —
   the formatter travels with the toolchain and its output moves between Swift
-  releases. The pin lives in `DEVELOPER_DIR` in `.github/workflows/ci.yml` and
-  in `.swift-version`; change them together.
+  releases. The pin lives in `DEVELOPER_DIR` in each workflow under
+  `.github/workflows` and in `.swift-version`; change them together.
 
 **First run needs the Accessibility permission, or it looks broken.** "Paste
-automatically" is on by default, and that setting is what requires
-Accessibility trust — so on a machine that has never granted it, `make run`
-shows the onboarding screen instead of the clipboard list. That is the app
-working correctly, not a build failure. Three ways past it:
+automatically" is on by default in the direct build that `make run` produces
+(the App Store build ships it off; see `PasteBehavior.default`), and that
+setting is what requires Accessibility trust — so on a machine that has never
+granted it, `make run` shows the onboarding screen instead of the clipboard
+list. That is the app working correctly, not a build failure. Three ways
+past it:
 
 - Grant the permission (System Settings > Privacy & Security > Accessibility).
-- Turn "paste automatically" off in Settings > General. Picking an item then
+- Turn "paste automatically" off in Settings > Clipboard. Picking an item then
   only copies it, and no permission is needed.
 - Launch with `--demo`. Besides seeding demo items, it bypasses the onboarding
   gate outright, which is why screenshot captures work on a fresh machine.
@@ -48,6 +50,8 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 |---|---|
 | `make build` | `swift build` |
 | `make test` | `swift test` |
+| `make build-mas` | build the App Store variant, in `.build/mas` |
+| `make test-mas` | test the App Store variant, in `.build/mas` |
 | `make coverage` | line coverage per file, worst first (reported, never gated) |
 | `make mutants` | whether the tests would catch a bug, not just run the line |
 | `make race` | the suite under ThreadSanitizer |
@@ -56,21 +60,23 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 | `make lint` | `swift format lint --strict` over Sources and Tests, plus `make lint-strings` |
 | `make lint-strings` | check `.lproj` key parity (`scripts/check-localization.sh`) |
 | `make format` | apply the formatter in place |
-| `make icon` | regenerate `Resources/AppIcon.icns` from the icon script |
+| `make icon` | regenerate the asset catalog's app icons and the README preview from `Resources/AppIcon-master.png` |
 | `make clean` | delete `.build` and `build` |
 
 ## Before opening a PR
 
 - Run `make test` and `make lint` and make sure both pass. CI runs the same
-  two, plus `swift build -c release` and `./build.sh release`.
+  two, plus `swift build -c release` and `./build.sh release`, and builds and
+  tests the App Store variant as `make test-mas` does. Run that too if the
+  change touches `Updater`, `Paster.mayPrompt`, or anything behind
+  `#if BACKPOCKET_MAS`.
 - Bring a test with the change (see below).
 - For UI changes, include before/after screenshots. Use the launch flags below
   to drive the panel into a reproducible state for capture.
 - Add a line to `CHANGELOG.md` under the unreleased heading at the top if the
-  change is user-visible. GitHub's generated release notes are built from labels, and
-  labels are applied by the issue templates, not by PRs — so a change that
-  isn't written into `CHANGELOG.md` by hand does not reach the release notes
-  in any recognizable form.
+  change is user-visible. Each release's notes are taken from its section of
+  that file, so a change that isn't written there by hand does not reach the
+  release notes at all.
 
 ## Tests
 
@@ -159,9 +165,9 @@ And in tests, bind a throwaway store with `PreferenceStore.withDefaults(_:_:)`
 rather than writing to the real one; see Testing seams in
 `docs/ARCHITECTURE.md` for why it is a task-local.
 
-### Three tools CI does not run
+### Three tools that do not gate a PR
 
-None of these gate a PR. Reach for them when a change warrants it.
+None of these run on a PR. Reach for them when a change warrants it.
 
 `make coverage` — line coverage per file. Read the per-file column, not the
 total: it maps how much of the app has been moved into testable shapes.
@@ -172,7 +178,9 @@ covered and now is half-covered has grown logic nobody tested.
 `make race` — the suite under ThreadSanitizer. Worth running when you touch
 clipboard capture, which hashes and thumbnails off the main actor while
 `Store` serialises those captures by hand. `--sanitize=address` is worth one
-too on the image and pasteboard paths. Both are clean today.
+too on the image and pasteboard paths. Both are clean today, and CI runs the
+ThreadSanitizer pass weekly (`.github/workflows/sanitizers.yml`) to keep it
+that way.
 
 `make mutants` — the one that answers what coverage cannot. It changes an
 operator, runs the suite, and reports whether anything failed; a survivor is

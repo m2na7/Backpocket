@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -10,11 +9,17 @@ import Testing
 /// test can see it.
 @MainActor
 @Suite
-struct StoreTests {
-    private let store: Store
-    private let container: ModelContainer
+struct StoreTests: InMemoryStoreSuite {
+    let container: ModelContainer
+    let store: Store
     private let source = CopySource(name: "TestApp", bundleID: "dev.test.app")
     private let limit = HistoryLimitBox()
+
+    /// A copy of the file at `path`, as Finder makes one, for the tests that
+    /// pin how file-ness is kept.
+    private let fileCopy = CopySource(
+        name: "Finder", bundleID: "com.apple.finder", isFileCopy: true)
+    private let path = "/Users/someone/.ssh/id_rsa"
 
     /// The cap the store reads, held in a box because the store exists before
     /// a test has said what it wants — and because a store built once must
@@ -26,44 +31,14 @@ struct StoreTests {
     }
 
     init() throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: Item.self, configurations: configuration)
+        container = try Self.makeContainer()
         let limit = limit
         store = Store(context: ModelContext(container), disposableLimit: { limit.value })
     }
 
-    private func item(_ content: String) throws -> Item {
-        try #require(store.items.first { $0.content == content })
-    }
-
-    /// A fresh context sees only what actually reached the container, so a
-    /// desync between the published array and the database cannot hide.
-    private func persistedContents() throws -> [String] {
-        try ModelContext(container).fetch(FetchDescriptor<Item>()).map(\.content)
-    }
-
-    /// Real encoded bytes: addImage reads dimensions from the data, so a
-    /// stub blob would be rejected as undecodable.
-    private func pngData(width: Int, height: Int) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: width,
-                pixelsHigh: height,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
-        return try #require(bitmap.representation(using: .png, properties: [:]))
-    }
-
     /// `addImage` returns before the row exists — the digest runs off the main
     /// actor — so every image assertion below waits for the capture chain
-    /// first. Suspending here is safe for the three tests that flip
+    /// first. Suspending here is safe for the two tests that flip
     /// `setUsingFallbackStoreForTesting`: their bodies are synchronous and
     /// restore the flag through `defer` without ever yielding the main actor,
     /// so a test parked on this await can only ever resume to see it back off.
@@ -107,8 +82,37 @@ struct StoreTests {
         #expect(stored.content.count == 200_000)
     }
 
+    /// The cap counts bytes, and ASCII cannot tell that from counting
+    /// characters: each "a" is one of both. "한" is three bytes, so 70,000 of
+    /// them are 210,000 bytes, and 66,666 whole ones are all that fit. A cap
+    /// that counted characters would keep every one; a raw byte cut would end
+    /// on two thirds of a syllable.
+    @Test func truncationCountsBytesNotCharacters() throws {
+        store.add(String(repeating: "한", count: 70_000), source: source)
+
+        let stored = try #require(store.items.first).content
+        #expect(stored.count == 66_666)
+        #expect(stored.utf8.count == 199_998)
+        #expect(stored.allSatisfy { $0 == "한" })
+    }
+
+    /// A character that does not fit is left out whole. The family is one
+    /// character of seven scalars and 25 bytes, and the first to cross the
+    /// cap: a cut at any scalar inside it would leave a lone man and a
+    /// dangling joiner at the end of the clip.
+    @Test func truncationNeverSplitsACharacter() throws {
+        let family = "👨‍👩‍👧‍👦"
+        store.add(
+            String(repeating: "a", count: 199_990) + String(repeating: family, count: 10),
+            source: source)
+
+        let stored = try #require(store.items.first).content
+        #expect(stored.utf8.count == 199_990)
+        #expect(stored.allSatisfy { $0 == "a" })
+    }
+
     @Test func addImageStoresDimensionsHashAndThumbnail() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
 
         let image = try #require(store.items.first)
         #expect(image.isImage)
@@ -118,7 +122,7 @@ struct StoreTests {
     }
 
     @Test func addingIdenticalImageMovesExistingToTopWithoutDuplicating() async throws {
-        let png = try pngData(width: 4, height: 3)
+        let png = try Fixture.png(width: 4, height: 3)
         await addImage(png, from: CopySource(name: "Alpha", bundleID: "dev.test.alpha"))
         let original = try #require(store.items.first)
         original.usedAt = Date(timeIntervalSinceNow: -100)
@@ -136,8 +140,8 @@ struct StoreTests {
     }
 
     @Test func addImageWithDifferentDataCreatesSecondItem() async throws {
-        await addImage(try pngData(width: 4, height: 3))
-        await addImage(try pngData(width: 5, height: 5))
+        await addImage(try Fixture.png(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 5, height: 5))
 
         #expect(store.items.count == 2)
         #expect(store.items.allSatisfy { $0.isImage })
@@ -145,15 +149,16 @@ struct StoreTests {
 
     // The capture chain. Digesting an image suspends, so two copies that arrive
     // before the first has landed are the case where an unserialized path would
-    // quietly get both the order and the dedup wrong — and `items` is never
-    // re-sorted, so a bad insert is permanent.
+    // quietly get both the order and the dedup wrong — and each row's usedAt
+    // is stamped as it is inserted, so a bad insert order is also the sorted
+    // order and no later re-sort would put it right.
 
     @Test func imagesCopiedBackToBackAreRecordedInCopyOrder() async throws {
         // Sizes chosen so the two digests take visibly different times: run
         // concurrently, the small one finishes first and the big one lands on
         // top of it, which is the reverse of what the user copied.
-        let big = try pngData(width: 900, height: 900)
-        let small = try pngData(width: 4, height: 3)
+        let big = try Fixture.png(width: 900, height: 900)
+        let small = try Fixture.png(width: 4, height: 3)
 
         store.addImage(big, source: source)
         store.addImage(small, source: source)
@@ -163,7 +168,7 @@ struct StoreTests {
     }
 
     @Test func recopyingAnImageStillBeingDigestedDoesNotDuplicateIt() async throws {
-        let png = try pngData(width: 4, height: 3)
+        let png = try Fixture.png(width: 4, height: 3)
 
         store.addImage(png, source: CopySource(name: "Alpha", bundleID: "dev.test.alpha"))
         store.addImage(png, source: CopySource(name: "Beta", bundleID: "dev.test.beta"))
@@ -210,7 +215,7 @@ struct StoreTests {
     }
 
     @Test func convertToNoteIsNoOpOnImages() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
         let image = try #require(store.items.first)
         let aged = Date(timeIntervalSinceNow: -86_400)
         image.usedAt = aged
@@ -282,11 +287,15 @@ struct StoreTests {
     @Test func anImageRefusesAContentEdit() async throws {
         // An image's content is a derived placeholder, so the editor must be
         // told the write did not happen rather than closing as if it had.
-        await addImage(try pngData(width: 4, height: 4))
+        await addImage(try Fixture.png(width: 4, height: 4))
         let image = try #require(store.items.first { $0.isImage })
+        let placeholder = image.content
 
         #expect(store.update(image, content: "typed over the placeholder") == false)
-        #expect(image.content != "typed over the placeholder")
+        // Untouched, not merely different: the placeholder still names the
+        // pixels, and the row still renders as the image it is.
+        #expect(image.content == placeholder)
+        #expect(image.isImage)
     }
 
     @Test func togglePinFlips() throws {
@@ -440,7 +449,7 @@ struct StoreTests {
     @Test func imageItemsParticipateInTrimOverflow() async throws {
         // Recorded before the cap is lowered rather than inside the block: the
         // capture has to be awaited, and one image is under every limit anyway.
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
 
         try withHistoryLimit(10) {
             let image = try #require(store.items.first)
@@ -549,7 +558,7 @@ struct StoreTests {
     }
 
     @Test func adoptAsNoteFilesANoteWhenTextMatchesAnImagePlaceholder() async throws {
-        await addImage(try pngData(width: 4, height: 3))
+        await addImage(try Fixture.png(width: 4, height: 3))
         let placeholder = try #require(store.items.first?.content)
 
         // Dropping text that happens to equal the placeholder must file a
@@ -558,17 +567,6 @@ struct StoreTests {
 
         #expect(store.items.filter(\.isNote).map(\.content) == [placeholder])
         #expect(store.items.contains { $0.isImage && !$0.isNote })
-    }
-
-    @Test func updateOnImageItemIsIgnored() async throws {
-        await addImage(try pngData(width: 4, height: 3))
-        let image = try #require(store.items.first)
-        let placeholder = image.content
-
-        store.update(image, content: "hacked")
-
-        #expect(image.content == placeholder)
-        #expect(image.isImage)
     }
 
     @Test func copyMatchingANoteRecordsAClipInsteadOfHijackingIt() throws {
@@ -614,6 +612,19 @@ struct StoreTests {
         #expect(store.revision == revision + 1)
     }
 
+    @Test func aReloadBumpsTheRevision() throws {
+        store.add("top", source: source)
+        let revision = store.revision
+
+        store.reload()
+
+        // The same rows come back, but a reload is where rows changed behind
+        // the store's back would surface, and the panel's lists are a
+        // snapshot that is only retaken when the revision moves.
+        #expect(store.revision > revision)
+        #expect(store.items.map(\.content) == ["top"])
+    }
+
     @Test func aPurgeThatDeletesNothingDoesNotBumpTheRevision() throws {
         store.add("fresh", source: source)
         let revision = store.revision
@@ -654,17 +665,151 @@ struct StoreTests {
         #expect(!fallback.hasStorageFailure)
     }
 
+    // A save that fails. What the user is told afterwards is decided in the
+    // rollback path every write shares, and nothing else reaches it.
+    //
+    // That path works around SwiftData. After a failed save, `rollback()`
+    // clears the context's change tracking, yet the next fetch through the
+    // context still returns what the save could not write: the row it deleted
+    // missing, its edit applied, its insert listed. A fresh context reads the
+    // file unchanged. `Store` fetches once before rolling back, so that its
+    // refetch is not that next fetch, and these tests fail without it.
+    //
+    // A later save that does land is out of their reach, since a store opened
+    // read-only never saves. A throwaway probe on a disk that filled up and
+    // was then freed found that the next successful save through the same
+    // context wrote only its own change, none of the failed one's.
+
+    /// Runs `body` against a store whose every save throws, over a file that
+    /// already holds whatever `seed` wrote. The file is opened a second time
+    /// with saving refused, the one way a test can make a real save fail
+    /// without a disk of its own to fill, and the refusal comes before
+    /// anything reaches the file: `persisted`, a fresh read of it, returns
+    /// exactly what `seed` left there.
+    private func withFailingStore(
+        seed: (Store) -> Void,
+        _ body: (_ failing: Store, _ persisted: () throws -> [String]) throws -> Void
+    ) throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "backpocket-failing-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Backpocket.store")
+
+        let writable = try ModelContainer(
+            for: Item.self, configurations: ModelConfiguration(url: url))
+        seed(
+            Store(
+                context: ModelContext(writable), disposableLimit: { HistoryLimit.default.rawValue })
+        )
+
+        let readOnly = try ModelContainer(
+            for: Item.self, configurations: ModelConfiguration(url: url, allowsSave: false))
+        let failing = Store(
+            context: ModelContext(readOnly), disposableLimit: { HistoryLimit.default.rawValue })
+        try body(failing) {
+            try ModelContext(readOnly).fetch(FetchDescriptor<Item>()).map(\.content)
+        }
+    }
+
     @Test func aFailedWriteLeavesTheListAndTheDatabaseAgreeing() throws {
-        store.add("kept", source: source)
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.clearHistory()
 
-        // The rollback path's whole purpose: whatever `items` publishes after
-        // a write must be what a fresh read of the database returns. A
-        // "Clear history" that reports success and hands every row back at
-        // the next launch is worse than the failure itself.
-        store.clearHistory()
+            // The flag is what tells the user; the file never changed.
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
 
-        #expect(store.items.map(\.content) == (try persistedContents()))
-        #expect(!store.hasStorageFailure)
+            // The rollback path's whole purpose: whatever `items` publishes
+            // after a write must be what a fresh read of the database
+            // returns. A "Clear history" that reports success and hands every
+            // row back at the next launch is worse than the failure itself.
+            #expect(failing.items.map(\.content) == rows)
+        }
+    }
+
+    @Test func anEditThatFailsToSaveIsReportedAsNotApplied() throws {
+        try withFailingStore(seed: { $0.add("before", source: source) }) { failing, persisted in
+            let clip = try #require(failing.items.first)
+
+            // False keeps the editor open with the user's text; true would
+            // close it over an edit that is gone at the next launch.
+            #expect(failing.update(clip, content: "after") == false)
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["before"])
+
+            // The row the editor holds is still the store's own and reads what
+            // the file holds: the list must not show an edit that is gone at
+            // the next launch, and the editor's next save has to reach a row
+            // the store still tracks.
+            #expect(failing.items.map(\.content) == rows)
+            #expect(failing.items.first === clip)
+            #expect(clip.content == "before")
+        }
+    }
+
+    @Test func aDeleteThatFailsToSaveKeepsTheRowListed() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.delete(try #require(failing.items.first))
+
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
+
+            // Still in the file, so it belongs in the list: a row the panel
+            // dropped would come back unannounced at the next launch.
+            #expect(failing.items.map(\.content) == rows)
+        }
+    }
+
+    @Test func aDeleteThatFailsToSaveOffersNoUndo() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.delete(try #require(failing.items.first))
+            #expect(!failing.canUndoDelete)
+
+            failing.delete([try #require(failing.items.first)])
+            #expect(!failing.canUndoDelete)
+            #expect(!failing.undoDelete())
+
+            // The row never left, so there is nothing to take back. An undo
+            // pressed once the store could write again would file a second
+            // copy of it.
+            #expect(try persisted() == ["kept"])
+            #expect(failing.items.map(\.content) == ["kept"])
+        }
+    }
+
+    @Test func aCopyThatFailsToSaveIsNotListed() throws {
+        try withFailingStore(seed: { $0.add("kept", source: source) }) { failing, persisted in
+            failing.add("new", source: source)
+
+            #expect(failing.hasStorageFailure)
+            let rows = try persisted()
+            #expect(rows == ["kept"])
+
+            // Never written, so never listed: the panel must not offer a clip
+            // that is gone at the next launch.
+            #expect(failing.items.map(\.content) == rows)
+        }
+    }
+
+    @Test func aConversionThatFailsToSaveLeavesTheClipAClip() throws {
+        try withFailingStore(seed: { $0.add("clip", source: source) }) { failing, persisted in
+            let clip = try #require(failing.items.first)
+
+            failing.convertToNote(clip)
+
+            #expect(failing.hasStorageFailure)
+            #expect(try persisted() == ["clip"])
+
+            // The failed edit above changed content; this one changes only a
+            // flag, and the panel files the row by it. A clip shown in the
+            // notes column would be back among the clips at the next launch.
+            #expect(failing.items.first === clip)
+            #expect(clip.isNote == false)
+        }
     }
 
     @Test func aHealthyStoreNeverReportsAStorageFailure() throws {
@@ -679,6 +824,54 @@ struct StoreTests {
         store.clearAll()
 
         #expect(!store.hasStorageFailure)
+    }
+
+    // File-ness, unlike the rich flavors, is a claim about what a clip IS,
+    // and a stale one makes a copied path paste as the file itself. So it
+    // follows the newest capture in both directions, and an edit clears it.
+
+    @Test func aPathRecopiedAsTextStopsBeingAFileCopy() throws {
+        store.add(path, source: fileCopy)
+        #expect(try item(path).isFileCopy)
+
+        store.add(path, source: source)
+
+        #expect(store.items.count == 1)
+        #expect(try item(path).isFileCopy == false)
+    }
+
+    @Test func aPathRecopiedAsAFileBecomesAFileCopy() throws {
+        store.add(path, source: source)
+        #expect(try item(path).isFileCopy == false)
+
+        store.add(path, source: fileCopy)
+
+        #expect(store.items.count == 1)
+        #expect(try item(path).isFileCopy)
+    }
+
+    @Test func editingAFileCopyMakesItText() throws {
+        store.add(path, source: fileCopy)
+        let clip = try item(path)
+
+        #expect(store.update(clip, content: "\(path)\n"))
+
+        // Hand-edited text is text, whatever it was captured as: an edited
+        // path list must not keep pasting the files it no longer describes.
+        #expect(clip.isFileCopy == false)
+    }
+
+    /// Bytes that do not decode are refused before a row exists: they could
+    /// neither be previewed nor pasted usefully. The refusal must not stall
+    /// the capture chain either, or every image after it would be lost.
+    @Test func undecodableImageBytesRecordNoRow() async throws {
+        await addImage(Data("not an image".utf8))
+
+        #expect(store.items.isEmpty)
+        #expect(try persistedContents().isEmpty)
+
+        await addImage(try Fixture.png(width: 4, height: 3))
+        #expect(store.items.map(\.content) == ["Image 4×3"])
     }
 
     @Test func plainRecopyKeepsCapturedRichFlavors() throws {

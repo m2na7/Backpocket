@@ -185,17 +185,4 @@ import Testing
         #expect(imageDimensions(of: "Image") == "Image")
         #expect(imageDimensions(of: "") == "")
     }
-
-    /// A real file, because `Item.fileURLs` checks existence on every read
-    /// and a made-up path would come back empty for the wrong reason.
-    private func withRealFile(_ body: (URL) throws -> Void) throws {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appending(path: "backpocket-rowvoice-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let file = directory.appending(path: "id_rsa")
-        try Data("private key".utf8).write(to: file)
-        try body(file)
-    }
 }

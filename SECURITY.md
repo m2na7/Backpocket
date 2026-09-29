@@ -23,33 +23,35 @@ is valid, you'll be credited in the advisory unless you ask not to be.
 Backpocket keeps your clipboard local: no account, no sync, no server holding
 your data, and nothing about what you copy is ever transmitted.
 
-It does make one request on its own. Sparkle asks the appcast whether a newer
-build exists — an IP, a timestamp and the app and OS version, nothing more —
-and it is enabled by default because that request log is this project's only
-count of live installs. Settings > General turns it off, after which the app
-makes no unprompted request at all. Updates carry an EdDSA signature checked
-against `SUPublicEDKey` in the bundle before anything is installed, so a
-compromised or spoofed appcast cannot deliver code; that check is what keeps
-an update channel from being a remote execution channel.
+It does make two kinds of request on its own. Sparkle asks the appcast whether
+a newer build exists — an IP, a timestamp and the app and OS version, nothing
+more — and it is enabled by default because that request log is this
+project's only count of live installs. Settings > General turns it off, after
+which the updater makes no request unless you ask it to. Updates carry an
+EdDSA signature checked against `SUPublicEDKey` in the bundle before anything
+is installed, so a compromised or spoofed appcast cannot deliver code; that
+check is what keeps an update channel from being a remote execution channel.
 
-The other exception is
-"Show link favicons" (Settings > Clipboard), off by default and fully inert
-while off — it reads nothing from disk and makes no request. Enabled, it
-makes up to three HTTPS requests per linked host, on the default port —
-`/favicon.ico`, the site's root page (for a declared icon), then the parent
-domain — straight to that site's own host, never a third-party favicon
-service, and never local or private hosts; every redirect hop is re-checked
-against the same rules and the chain is capped. Results (including misses)
-are cached to disk, age- and count-bounded, and clearable from Settings
-(also cleared by "Reset everything"). This is the app's only network
-surface, so reports against it are security reports too, even when they look
-like ordinary bugs:
+The other is "Show link favicons" (Settings > Clipboard), on by default and
+fully inert while off — it then reads nothing from disk and makes no request.
+Enabled, it makes up to four HTTPS requests per linked host, stopping once one
+yields an icon: `/favicon.ico` and the root page on the linked host, the icon
+that page declares, then the parent domain's `/favicon.ico`. The three it
+builds itself use the default port. The declared icon is the site's own choice
+and may sit on another public host, such as its CDN, on whatever port it
+names, and a redirect may likewise lead to another public host. Never a
+third-party favicon service, never plain HTTP, and never local or private
+hosts; every redirect hop is re-checked against the same rules and the chain
+is capped. Results (including misses) are cached to disk, age- and
+count-bounded, and clearable from Settings (also cleared by "Reset
+everything"). Besides the updater, this is the app's only network surface, so
+reports against it are security reports too, even when they look like ordinary
+bugs:
 
-- A favicon request reaching a host other than the copied link's own (or its
-  parent domain), including via a redirect or a declared `<link rel="icon">`
-  href that resolves off-host.
-- A favicon fetch firing with the setting off, or against a local/private
-  host despite the vetting.
+- A favicon request over plain HTTP, or to a local or private host
+  (localhost, `*.local`, `.onion`, any IP literal) despite the vetting —
+  including via a redirect or a declared `<link rel="icon">` href.
+- A favicon fetch firing with the setting off.
 - Anything beyond pixels — cookies, headers, identifying state — persisting
   from a favicon fetch or surviving between fetches.
 

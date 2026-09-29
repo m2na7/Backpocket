@@ -49,6 +49,8 @@ a bug in this document.
 - `Onboarding` — the single-task screen shown when the accessibility
   permission is missing.
 - `DebugLaunch` — DEBUG-only launch flags (see Testing seams below).
+- `DemoSeed` — the DEBUG-only fixture content `--demo` seeds into an empty
+  store, kept out of `AppDelegate` since it only calls `Store`'s own API.
 
 ### `Clipboard`
 
@@ -128,6 +130,11 @@ a bug in this document.
   next, over the three lists reduced to identifiers. Taking rows stripped of
   everything else is what keeps the rules testable without a store, a query,
   or a view.
+- `PanelTargeting` — which row an action aims at and which row may grow a
+  preview card. The row the user sees highlighted wins, so a hovered row beats
+  the focused pane's remembered selection; and a selection that only followed
+  typing or the panel opening never grows a card. Both rules were computed
+  properties on `ContentView`, and both have sent an action to the wrong row.
 - `SplitDrag` — the notes column's share of the panel width, and the
   arithmetic of dragging the divider. Stored as a fraction so the split
   survives a resize but rendered in points with a floor under each column, so
@@ -139,9 +146,22 @@ a bug in this document.
   body was O(stack × items) on every render.
 - `DetailPanel` — the hover preview card, a child window that is never made
   key (a SwiftUI popover would grab focus and misfire the panel's auto-close).
+- `DetailPlacement` — which side of the panel the card takes, how large it
+  may grow there, and where it lands, as arithmetic over two rectangles. Every
+  one of those rules used to be reachable only by dragging the panel to the
+  edge of a second display. Defined in `DetailPanel`.
+- `DetailContent` — the card's body and metadata footer, measured unscrolled
+  so the card can size itself to it. Its `measured` twin drops the syntax
+  coloring, which makes sizing a long clip dozens of times cheaper and is sound
+  only while the coloring moves no glyphs; its suite pins that for every
+  language. Defined in `DetailPanel`.
 - `EditPanel` — the note editor; non-activating like the main panel, but it
   does take key focus, so `AppDelegate` suspends the main panel's auto-hide
   while it is open.
+- `EditorActions` — what the editor's buttons do when the store may refuse
+  the write: paste only a save that landed, and tell an item that is gone
+  apart from a store that cannot write, so the editor stays up with the
+  user's text in it rather than closing as if it had saved.
 - `PanelEventMonitors` — the panel's two `NSEvent` local monitors (the ⌘
   watch, the pointer-travel watch) and their add/remove pairing, which is the
   part that goes wrong: a monitor installed twice handles every event twice,
@@ -152,7 +172,15 @@ a bug in this document.
   to draw and the same lists as identifiers for the selection. They were five
   pieces of `@State` kept in step by hand, and one recompute that updates the
   lists but not the identifiers leaves the selection walking rows the panel is
-  no longer drawing.
+  no longer drawing. It also carries the `PanelIndex` the lists were filtered
+  from, so the next keystroke filters that instead of the store.
+- `PanelIndex` — the per-item facts the lists are filtered from (kind, link,
+  pin, stamp, identifier, the searchable head of the text), read off the
+  models once per `Store.revision` rather than on every keystroke. It is
+  keyed on the revision alone, which is sound only because of the invariant
+  below; `ContentView` checks it against the live revision at the moment of
+  use — a drop onto the notes column recomputes before the revision handler
+  runs — and retakes it on every panel open regardless.
 - `PanelKeyboard` (with `PanelKeyPress`, `PanelKeyContext` and `PanelCommand`)
   — the panel's keyboard as a decision table, over flat scalars rather than
   the store and the view, so every key and modifier combination can be
@@ -160,16 +188,19 @@ a bug in this document.
   beside it: `KeyPress` has no public initializer, so which keys the panel
   claims is stated over the pieces the press was taken apart into.
 - `PanelLists` — pure derivation of what the panel shows (clip/link/note
-  partitioning, search filtering, note sectioning) from the store and the
-  query, so it is testable without a view. Under `LinkCollection.both` the
-  clips and links lists deliberately share rows: one item is two rows, which
-  is why nothing downstream may identify a row by its item alone — the pane
-  is passed in (`ContentView.column`, `HoverMachine.Entry`) rather than
-  worked out from what the row holds.
+  partitioning, search filtering, note sectioning) from the store's
+  `PanelIndex` and the query, so it is testable without a view. Under
+  `LinkCollection.both` the clips and links lists deliberately share rows: one
+  item is two rows, which is why nothing downstream may identify a row by its
+  item alone — the pane is passed in (`ContentView.column`,
+  `HoverMachine.Entry`) rather than worked out from what the row holds.
 - `NoteGrouping` — the Apple Notes-style recency buckets (`NoteGroup`) the
-  notes column is grouped by, keyed off `usedAt`.
+  notes column is grouped by, keyed off `usedAt`. A whole list is placed
+  through one `NoteClock`, which works the windows out once and formats each
+  day once: the notes list is unbounded and is relabelled on every keystroke.
 - `RowChrome` — small shared row furniture: the pick-order `StackBadge`, the
-  `⌘`-slot `ShortcutChip`, and search-match emphasis.
+  `⌘`-slot `ShortcutChip`, the `RowHighlight` both row types draw, and
+  search-match emphasis.
 - `RowVoice` (with the `RowSpeech` modifier) — the sentence VoiceOver reads in
   place of a row, composed from plain values so the wording and the order can
   be checked without a view. A row says most of what it is in icons, glyphs
@@ -187,11 +218,20 @@ a bug in this document.
   defined in `ItemRow`.
 - `AppIcon` — per-bundle-ID and per-file-path icon caches (`NSWorkspace`
   lookups are too slow to repeat on every row render).
-- `Favicons` — the panel's one network-capable component: opt-in link-icon
-  fetching (off by default), vetted to the link's own host over HTTPS (with
-  redirects checked and capped), backed by a size- and age-bounded on-disk
-  cache that also remembers misses so a dead host isn't reprobed every
-  launch.
+- `BoundedCache` — the ceilinged dictionary behind the `FileClip`,
+  `Thumbnail` and `AppIcon` caches, which live as long as the panel does.
+  Reaching the ceiling drops everything rather than evicting one entry: every
+  value re-derives lazily from what the row already holds, so a wholesale
+  flush is a cheaper miss than tracking recency.
+- `Favicons` — the panel's one network-capable component: link-icon fetching
+  (on by default, switchable off in Settings), over HTTPS to public hosts only
+  — the link's host and its parent domain, plus whatever public host a
+  declared icon or a redirect names (every hop checked, the chain capped) —
+  backed by a size- and age-bounded on-disk cache that also remembers misses
+  so a dead host isn't reprobed every launch. `RedirectGuard` (the per-hop
+  vetting), `FetchLimiter` (three hosts at once) and `FetchWaiters` (which
+  waiter may cancel a shared download) are defined beside it as types of
+  their own so the tests can reach them directly.
 
 ### `Settings`
 
@@ -224,6 +264,21 @@ a bug in this document.
   `LSUIElement` app it would otherwise open behind everything.
 - `GeneralPane`, `ShortcutsPane`, `HistoryPane`, `IgnorePane`, `DataPane` —
   the five tabs, in `SettingsView`.
+- `GlobalShortcutChange` (with `HotKeyStatus`) — the global-shortcut
+  recorder's rollback ladder as a value: which of five outcomes a recorded
+  combination reaches, down to the rollback failing on top of a failed
+  switch, which leaves no working shortcut. Persisting and registering stay
+  with the caller, the same split `PasteFlavor` uses.
+- `ShortcutRecorder` — which keystrokes cancel an armed recorder. Its event
+  monitor swallows every key, so a mistake here is a recorder the user cannot
+  get out of, or a combination they cannot record.
+- `HotKeyControl` — the three hotkey operations Settings needs, supplied by
+  the composition root, so the dependency runs one way instead of a view
+  reaching for `AppDelegate.shared`.
+- `LaunchAtLogin` — which `SMAppService` statuses count as on, what the switch
+  shows between the click and the answer, and where a refusal leaves the row.
+  The service answers truthfully only in a real login session, so the
+  decisions are a value and the two registration calls stay in the view.
 
 ### `Text`
 
@@ -247,32 +302,48 @@ a bug in this document.
   load-bearing for a tool that reads everything you copy: every dependency is
   someone else's code running with the same access. Adding a second needs the
   same argument Sparkle had to win, in an issue, first.
-- **The updater is the only unprompted request**, and `Updater` is the only
-  place that starts it. It refuses to start against a feed it cannot use,
-  because starting on a bad feed hangs the app before its first window. Updates carry
-  an EdDSA signature checked against `SUPublicEDKey` before install — that
-  check is what separates an update channel from a remote execution channel,
-  and nothing may make it conditional.
-- **Nothing else reaches the network by default.** The one exception is
-  `Favicons`, off unless the
-  user turns it on (`FaviconFetching.isEnabled`): over HTTPS, to the link's
-  own host — its root page and parent domain included — never a third-party
-  favicon service, never local or private hosts, through an ephemeral
-  cookie-less session. Everything else: no URLSession, no sockets.
+- **The updater is one of two unprompted requests**, and `Updater` is the
+  only place that starts it. It refuses to start against a feed it cannot
+  use, because starting on a bad feed hangs the app before its first window.
+  Updates carry an EdDSA signature checked against `SUPublicEDKey` before
+  install — that check is what separates an update channel from a remote
+  execution channel, and nothing may make it conditional.
+- **The other is `Favicons`, and nothing else reaches the network.** It is on
+  by default and fully inert while the user has it off
+  (`FaviconFetching.isEnabled`): over HTTPS only, never a third-party favicon
+  service, never local or private hosts, through an ephemeral cookie-less
+  session. The requests it builds itself go to the link's host — its root
+  page included — and the parent domain; a declared icon or a redirect may
+  land on another public host, such as the site's CDN, and every redirect hop
+  is vetted by the same rules with the chain capped. Everything else: no
+  URLSession, no sockets.
 - **A clip and a note are one row.** `Item` is the only model; `isNote` is a
   flag, not a table. Converting a clip to a note mutates in place, keeping
   source and timestamps. This is the product thesis, not a storage shortcut.
 - **Notes and pinned items never expire.** `Item.isDisposable` is the single
   gate that expiry, history-limit trimming, and Clear History all go through.
-- **`Store.items` is always sorted by `usedAt` descending, maintained
-  incrementally.** Every mutation that bumps `usedAt` sets it to `Date()` —
-  the global maximum — so `promote(_:)` can move that item to the front and
-  the order is preserved without refetching or re-sorting. The guard is
-  `isTracked(_:)`: callers hold `Item` references across time (an open editor
-  outlives its row), and mutating a reference that trimming or expiry already
-  deleted would re-insert the dead model at the front — a ghost row with no
-  backing store that also hijacks `add`'s dedup. Writes through stale
-  references are dropped instead.
+- **`Store.items` is ordered pinned block first, then `usedAt` descending
+  within each block, maintained incrementally.** New rows and every mutation
+  that bumps `usedAt` carry `Date()` — the global maximum — so they land at,
+  or `promote(_:)` moves them to, the front of their own block
+  (`insertionIndex`), with no refetch. Outside a full refetch, which sorts (at
+  init, and after a failed write; `reload()` is the same refetch plus a
+  revision bump), exactly two mutations re-sort: `togglePin` (the item
+  crosses blocks) and `undoDelete` (restored rows keep their old `usedAt`, so
+  `insertionIndex` would misfile them). The
+  guard is `isTracked(_:)`: callers hold `Item` references across time (an
+  open editor outlives its row), and mutating a reference that trimming or
+  expiry already deleted would re-insert the dead model at the front — a ghost
+  row with no backing store that also hijacks `add`'s dedup. Writes through
+  stale references are dropped instead.
+- **Every change to an item bumps `Store.revision`.** `Store` makes every
+  write and each one ends in the bump, `reload()` included; the DEBUG demo
+  seed, which backdates stamps itself, saves through `Store` afterwards. Views
+  refilter on the revision, never on `items`: an in-place change — converting
+  or re-copying the item already on top — leaves the array reference-equal.
+  `PanelIndex` goes further and snapshots the items per revision, so a write
+  that skipped the bump would leave the panel searching what the rows used to
+  say until it next opens.
 - **Panels never activate the app.** `BackpocketPanel`, `DetailPanel`, and
   `EditPanel` are all non-activating; focus never leaves the paste target.
   `SettingsWindow` is the sole, deliberate exception.
@@ -341,7 +412,10 @@ English, it renders as the raw identifier.
 - `Store` takes a `ModelContext`; tests hand it an in-memory
   `ModelContainer`. It also takes `disposableLimit` as a closure rather than a
   number, so a history-limit change in Settings applies to the very next copy
-  instead of to the next launch.
+  instead of to the next launch. A failed save needs no seam of its own: a
+  store file opened a second time with `allowsSave: false` throws on every
+  save before anything reaches the file, which is how `StoreTests` and
+  `ImageBytesTests` reach the rollback path.
 - **Preferences are injected with a task-local, not a settable global.**
   `PreferenceStore.withDefaults(_:_:)` binds a throwaway `UserDefaults` for
   the duration of a body. The distinction is the whole point: swift-testing
@@ -352,9 +426,11 @@ English, it renders as the raw identifier.
   the binding and the accessor are `#if DEBUG`; release compiles down to
   `{ .standard }`.
 
-  This is what let every suite drop `.serialized` — none remains — and it is
-  why a test must never reach for `UserDefaults` on its
-  own. Prefer parameters over reads where you can: `PanelMetrics.panelHeight`
+  This is what let the suites that read preferences drop `.serialized`, and
+  it is why a test must never reach for `UserDefaults` on its own. One suite
+  is still serialized, for an unrelated reason: the `FaviconFetching` tests
+  all drive the `Favicons.shared` singleton, and a clear in one would cancel
+  another's download in flight. Prefer parameters over reads where you can: `PanelMetrics.panelHeight`
   takes the row count as an argument, which turned a preference-dependent
   assertion into pure geometry.
 - **One defaults read is deliberately outside `PreferenceStore`.**
@@ -370,7 +446,7 @@ English, it renders as the raw identifier.
   has to stay one. What made `MigrationTests` serializable was tests *writing*
   it as a side effect of opening a container; the test entry point now returns
   that value instead of assigning it. `setUsingFallbackStoreForTesting`
-  remains for three `StoreTests`, and is safe only because every suite that
+  remains for two `StoreTests`, and is safe only because every suite that
   touches it is `@MainActor` with synchronous bodies, which cannot interleave.
   Put an `await` inside one of those bodies and the window opens — at which
   point the flag should be injected into `Store.init` the way the history

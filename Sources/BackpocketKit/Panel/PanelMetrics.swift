@@ -20,17 +20,42 @@ enum PanelMetrics {
     static let minNotesColumn: CGFloat = 200
     static let minLeftColumn: CGFloat = 260
 
-    /// A 30pt row plus the 1pt list gap.
-    static let rowPitch: CGFloat = 31
+    /// The height of one clip, link or note row.
+    static let rowHeight: CGFloat = 30
+    /// A row plus the 1pt list gap, half of it from each of `rowInsets`' top
+    /// and bottom. Derived rather than written down, so a change to the row
+    /// height moves the first-run size and the section frames with it.
+    static let rowPitch = rowHeight + rowInsets.top + rowInsets.bottom
     /// Section header text with its padding, plus the list's own top inset.
     static let sectionHeader: CGFloat = 30
     static let fieldRow: CGFloat = 41
     static let footer: CGFloat = 33
     /// A headerless links section collapsed to its hint line.
     static let emptyLinksHeight: CGFloat = 96
+    /// The first-run width. Unlike the height it does not follow any row
+    /// count; once the user drags an edge, `PanelSize` takes over.
+    static let defaultWidth: CGFloat = 680
 
     static func linksSectionHeight(rows: Int) -> CGFloat {
         sectionHeader + CGFloat(rows) * rowPitch
+    }
+
+    /// The links section's frame inside a column `available` points tall:
+    /// sized to its content up to `linkRows`, and never more than the column
+    /// less a header and one clip row — the clipboard list must always keep a
+    /// row. On a column too short for even that, it bottoms out at one row
+    /// pitch instead of following the column down.
+    static func cappedLinksSectionHeight(
+        linkCount: Int,
+        linkRows: Int,
+        available: CGFloat
+    ) -> CGFloat {
+        let desired =
+            linkCount == 0
+            ? emptyLinksHeight
+            : linksSectionHeight(rows: min(linkCount, linkRows))
+        let ceiling = max(available - sectionHeader - rowPitch - 1, rowPitch)
+        return min(desired, ceiling)
     }
 
     /// The links row count is a parameter rather than a read of `LinkRows`, so
@@ -46,6 +71,6 @@ enum PanelMetrics {
             return chrome + sectionHeader + clips + 1 + linksSectionHeight(rows: linkRows)
         }
         // The single headerless list carries only its own top inset.
-        return chrome + 6 + clips
+        return chrome + listInset + clips
     }
 }

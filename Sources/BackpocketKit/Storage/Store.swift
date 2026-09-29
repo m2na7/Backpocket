@@ -10,8 +10,9 @@ final class Store: ObservableObject {
     /// Pinned items first, then usedAt descending — see `ordered`. The array
     /// is maintained incrementally rather than refetched: a mutation that
     /// bumps usedAt sets it to Date(), the global maximum, so the item only
-    /// has to move to the front of its own block (`insertionIndex`). Pinning
-    /// is the one change that reorders across blocks, and re-sorts.
+    /// has to move to the front of its own block (`insertionIndex`). Two
+    /// changes re-sort instead: pinning, which moves an item across blocks,
+    /// and `undoDelete`, whose restored rows keep their old usedAt.
     @Published private(set) var items: [Item] = []
 
     /// Bumped on every mutation. Views must refilter on THIS, not on `items`:
@@ -52,8 +53,9 @@ final class Store: ObservableObject {
     /// digesting when either one reached the dedup lookup, so a re-copy of an
     /// image already in flight would miss the row it should have promoted and
     /// land as a second one; and whichever render happened to finish first
-    /// would insert first, which `items` — maintained incrementally, never
-    /// re-sorted — would then keep as the order the user copied in.
+    /// would insert first and take the older usedAt, so the wrong order would
+    /// be stamped into the timestamps themselves, where no re-sort of `items`
+    /// could put back the order the user copied in.
     ///
     /// Chaining onto it is safe because the property is main-actor isolated
     /// like everything else here: the read and the write in `addImage` happen
@@ -68,6 +70,11 @@ final class Store: ObservableObject {
     /// Only the two `delete` methods record here. Expiry and the history limit
     /// are the app doing what the user configured, and Clear History is its
     /// own deliberate act; none of them is the slip this exists to catch.
+    ///
+    /// And they record only once the delete's save has landed. A delete that
+    /// failed to save leaves its row in the store and in the list, so there
+    /// is nothing to take back, and an undo pressed once the store can write
+    /// again would add a second copy of a row that never went.
     private var undo = DeletionUndo()
 
     /// Drops the retained rows when their window closes even if the app is
@@ -83,12 +90,26 @@ final class Store: ObservableObject {
         // An in-memory fallback container is a storage failure that no later
         // success can clear — every write "succeeds" and none of it survives.
         hasStorageFailure = Persistence.isUsingFallbackStore
-        reload()
+        fetchItems()
     }
 
     // MARK: Reading
 
+    /// Refetches every item. Bumps `revision` like any other change to
+    /// `items`: the panel's `PanelIndex` is a snapshot of the items keyed on
+    /// it, and a reload that left it alone would leave that snapshot
+    /// describing the rows from before.
     func reload() {
+        fetchItems()
+        revision += 1
+    }
+
+    /// `reload()` without the bump, for the two callers that need none: the
+    /// initializer, before anything can have read the store, and `write(_:)`
+    /// after a failed save, whose callers bump on their way out whatever
+    /// happens — `save()` in its defer, `insertDetached`'s callers once they
+    /// have filed the rows.
+    private func fetchItems() {
         do {
             items = try context.fetch(FetchDescriptor<Item>()).sorted(by: Self.ordered)
             hasStorageFailure = Persistence.isUsingFallbackStore
@@ -229,16 +250,19 @@ final class Store: ObservableObject {
             return
         }
 
-        let item = Item(
+        let captured = Item(
             content: "Image \(digest.width)×\(digest.height)",
             source: source,
             imageData: data,
             thumbnailData: digest.thumbnail,
             imageHash: digest.hash
         )
-        context.insert(item)
-        items.insert(item, at: insertionIndex(for: item))
-        save()
+        // Never `context.insert`: the model `items` keeps for the session
+        // must not be the one holding the bytes. See `insertDetached`.
+        if let item = insertDetached([captured])?.first {
+            items.insert(item, at: insertionIndex(for: item))
+        }
+        revision += 1
         trimOverflow()
     }
 
@@ -304,10 +328,12 @@ final class Store: ObservableObject {
 
     func delete(_ item: Item) {
         guard isTracked(item) else { return }
-        recordUndo([item])
+        // Read while the row is still live, and kept only if the delete
+        // lands: see `undo` and `DeletionUndo.record`.
+        let taken = [DeletionUndo.Snapshot(item)]
         context.delete(item)
         items.removeAll { $0 === item }
-        save()
+        if save() { recordUndo(taken) }
     }
 
     /// One save for the whole handful — deleting a ⌘-collected selection
@@ -315,9 +341,9 @@ final class Store: ObservableObject {
     func delete(_ doomed: [Item]) {
         let tracked = doomed.filter(isTracked)
         guard !tracked.isEmpty else { return }
-        recordUndo(tracked)
+        let taken = tracked.map(DeletionUndo.Snapshot.init)
         remove(tracked)
-        save()
+        if save() { recordUndo(taken) }
     }
 
     // MARK: Undo
@@ -325,7 +351,7 @@ final class Store: ObservableObject {
     /// Whether the last delete can still be taken back. Read alongside
     /// `revision` like everything else the panel derives from the store.
     var canUndoDelete: Bool {
-        undo.canUndo(asOf: Date())
+        undo.canUndo(asOf: ContinuousClock.now)
     }
 
     /// Puts the most recent delete back — one call per delete, however many
@@ -337,10 +363,12 @@ final class Store: ObservableObject {
     /// context, and only `Store` may hand out references to live items.
     @discardableResult
     func undoDelete() -> Bool {
-        guard let snapshots = undo.takeLatest(asOf: Date()) else { return false }
+        guard let snapshots = undo.takeLatest(asOf: ContinuousClock.now) else { return false }
+        defer { revision += 1 }
 
-        let restored = snapshots.map { $0.restored() }
-        restored.forEach(context.insert)
+        // Through `insertDetached` like a fresh capture: a restored image
+        // carries its full bytes again and must not pin them either.
+        guard let restored = insertDetached(snapshots.map { $0.restored() }) else { return false }
         items.append(contentsOf: restored)
         // A restore is the one insertion that does not carry the newest
         // usedAt, so `insertionIndex` — which assumes the global maximum —
@@ -351,20 +379,27 @@ final class Store: ObservableObject {
         // asked for would make undo silently do nothing whenever the history
         // sits at its cap. The cap is re-applied on the next copy and on
         // panel open, exactly as it is after the limit is lowered in Settings.
-        return save()
+        return true
     }
 
-    private func recordUndo(_ doomed: some Collection<Item>) {
-        undo.record(doomed, at: Date())
+    private func recordUndo(_ taken: [DeletionUndo.Snapshot]) {
+        let deletedAt = ContinuousClock.now
+        undo.record(taken, at: deletedAt)
         // The window is enforced lazily on read, which is enough to decide
         // what may be restored but not enough to stop holding the bytes: an
         // app nobody touches again would keep the deleted content until quit.
         // One timer per recorded delete drops it on schedule instead, and
         // replacing it is safe because the newest batch always outlives the
         // ones beneath it.
+        //
+        // The timer runs to a deadline on the clock the batch was stamped
+        // with, from that same stamp, so the sweep it wakes is certain to
+        // find the batch expired. There is no second chance: nothing re-arms
+        // it, which is why the stamp must not come from a clock that can
+        // step backwards.
         undoExpiry?.cancel()
         undoExpiry = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(DeletionUndo.window))
+            try? await Task.sleep(until: deletedAt + DeletionUndo.window, clock: .continuous)
             guard !Task.isCancelled else { return }
             self?.forgetExpiredDeletions()
         }
@@ -373,7 +408,7 @@ final class Store: ObservableObject {
     private func forgetExpiredDeletions() {
         // Views refilter on `revision` alone, so an offered undo going away
         // has to bump it — and a sweep that dropped nothing must not.
-        if undo.forgetExpired(asOf: Date()) { revision += 1 }
+        if undo.forgetExpired(asOf: ContinuousClock.now) { revision += 1 }
     }
 
     // MARK: Housekeeping
@@ -457,13 +492,45 @@ final class Store: ObservableObject {
         items.removeAll { ids.contains(ObjectIdentifier($0)) }
     }
 
+    /// Inserts rows through a context that lives only for this call, and
+    /// returns the main context's own instances of them once they are saved;
+    /// nil when the write failed, which `write` has already reported and
+    /// rolled `items` back from. Bumps nothing: the caller files the rows
+    /// into `items` and then bumps `revision`, as `save` does.
+    ///
+    /// Image rows come through here because a model keeps the bytes it was
+    /// given for as long as it stays registered: saving writes the
+    /// external-storage file but does not let go of the value. The main
+    /// context's models are the ones `items` holds for the whole session, so
+    /// an image inserted there would stay resident until quit. The throwaway
+    /// context carries the bytes to disk and drops them when it goes, and the
+    /// instance `items` gets is a fault that loads the row's columns and
+    /// leaves the blob on disk until `loadImageData` asks for it.
+    ///
+    /// Main-context instances, never the inserted ones: every later write to
+    /// a row in `items` — a promote, a pin, a delete — is saved through
+    /// `context`, so a model registered anywhere else would lose them.
+    private func insertDetached(_ fresh: [Item]) -> [Item]? {
+        let scratch = ModelContext(context.container)
+        fresh.forEach(scratch.insert)
+        guard write(scratch) else { return nil }
+        return fresh.compactMap { context.model(for: $0.persistentModelID) as? Item }
+    }
+
     /// Returns whether the write landed, so callers that promised the user
     /// something durable can tell them otherwise.
     @discardableResult
     private func save() -> Bool {
         defer { revision += 1 }
+        return write(context)
+    }
+
+    /// The save itself, for whichever context holds the changes: a write
+    /// through `insertDetached` has to fail exactly the way every other
+    /// write does.
+    private func write(_ changes: ModelContext) -> Bool {
         do {
-            try context.save()
+            try changes.save()
             hasStorageFailure = Persistence.isUsingFallbackStore
             return true
         } catch {
@@ -472,11 +539,40 @@ final class Store: ObservableObject {
             // "Clear history" promising an irreversible delete and handing
             // every row back at the next launch is worse than the failure.
             logger.error("save failed: \(error, privacy: .public)")
-            context.rollback()
-            reload()
+            // In the context that failed, which is not always `context`: a
+            // failed `insertDetached` leaves its rows in the scratch context,
+            // and since SwiftData never lets go of that context, each failed
+            // image capture would keep its bytes until quit.
+            discardChanges(in: changes)
+            fetchItems()
             hasStorageFailure = true
             return false
         }
+    }
+
+    /// Throws away what a failed save tried to write, so that the refetch
+    /// after it reads the store as it still is.
+    ///
+    /// `rollback()` alone does not do that. After a failed save it clears
+    /// the context's change tracking, yet the next fetch through the context
+    /// still returns the changes the save could not write: a row it deleted
+    /// is missing, its edit is applied, its insert is listed. The fetch after
+    /// that one reads the store as it is, as a fresh context does from the
+    /// start. A fetch made before the rollback, even a bare count, takes the
+    /// place of that next fetch, so the refetch after the rollback reads the
+    /// store. That is observed, not documented: SwiftData on macOS 26, with
+    /// the store opened read-only and with the disk full. StoreTests fails if
+    /// it stops holding.
+    ///
+    /// Rolled back in place rather than replaced by a fresh context, for two
+    /// reasons. SwiftData never releases a context whose save failed, so a
+    /// replacement per failure kept another 150 to 170 KB for every failed
+    /// write at 1,000 rows, until quit. And a context kept keeps its models:
+    /// the item an open editor holds is still one of the store's own, so
+    /// saving it again works once the store does.
+    private func discardChanges(in failed: ModelContext) {
+        _ = try? failed.fetchCount(FetchDescriptor<Item>())
+        failed.rollback()
     }
 
     #if DEBUG

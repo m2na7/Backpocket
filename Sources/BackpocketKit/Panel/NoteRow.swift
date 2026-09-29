@@ -114,13 +114,8 @@ struct NoteRow: View, @MainActor Equatable {
             }
         }
         .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
-        )
-        .animation(nil, value: highlighted)
-        .contentShape(Rectangle())
+        .frame(height: PanelMetrics.rowHeight)
+        .modifier(RowHighlight(highlighted: highlighted))
         .draggable(item.content)
         .contextMenu {
             Button("ctx.paste", action: onActivate)

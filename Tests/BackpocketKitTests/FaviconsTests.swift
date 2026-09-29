@@ -19,6 +19,40 @@ private actor ConcurrencyPeak {
     }
 }
 
+/// Opens once, and lets through everything waiting on it and everything that
+/// arrives later — the step a scripted download holds at until a test says so.
+private actor Latch {
+    private var isOpen = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func open() {
+        isOpen = true
+        for continuation in waiting { continuation.resume() }
+        waiting.removeAll()
+    }
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+}
+
+/// What the scripted network saw, in order.
+private actor NetworkLog {
+    private(set) var entries: [String] = []
+
+    func record(_ entry: String) {
+        entries.append(entry)
+    }
+}
+
+/// Real encoded bytes: a stub blob is rejected by the decode guard, so it
+/// would keep passing with the size cap deleted. Uncompressed, which is what
+/// lets a 400-pixel square stand for a body past that cap.
+private func tiffData(side: Int) throws -> Data {
+    try #require(Fixture.bitmap(width: side, height: side).tiffRepresentation)
+}
+
 @Suite struct FaviconsTests {
     @Test func publicHostsAreFetchable() {
         #expect(Favicons.isFetchable(host: "github.com"))
@@ -44,25 +78,6 @@ private actor ConcurrencyPeak {
         #expect(!Favicons.isFetchable(host: "8.8.8.8"))
         #expect(!Favicons.isFetchable(host: "::1"))
         #expect(!Favicons.isFetchable(host: "2606:4700::6810:84e5"))
-    }
-
-    /// Real encoded bytes: a stub blob is rejected by the decode guard, so it
-    /// would keep passing with the size cap deleted.
-    private func tiffData(side: Int) throws -> Data {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: side,
-                pixelsHigh: side,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
-        return try #require(bitmap.tiffRepresentation)
     }
 
     @Test func sanitizedPNGRejectsNonImagesAndOversize() throws {
@@ -271,8 +286,8 @@ private actor ConcurrencyPeak {
     }
 
     /// "At most three hosts at once" is a promise about what this app does to
-    /// a network — a whole list scrolling into view would otherwise start
-    /// three requests per visible row.
+    /// a network — a whole list scrolling into view would otherwise start a
+    /// download, of up to four requests, for every visible row at once.
     @Test func theFetchLimiterNeverRunsMoreThanItsLimitAtOnce() async {
         let limiter = FetchLimiter(limit: 3)
         let tracker = ConcurrencyPeak()
@@ -298,6 +313,41 @@ private actor ConcurrencyPeak {
         // a limit of three must actually overlap, or the assertion above is
         // being satisfied by a limiter that serialized everything.
         #expect(await tracker.peak > 1)
+    }
+
+    /// The same cap, with callers arriving while others finish — the way rows
+    /// scrolling into view actually ask. A slot a finisher frees must go to
+    /// the waiter it wakes, not to a newcomer that reaches the actor while
+    /// that waiter is still on its way back onto it.
+    ///
+    /// The short body is deliberate. With the fifty yields above every caller
+    /// has queued long before the first one leaves, so nobody arrives into
+    /// that gap and a limiter that re-takes slots passes; here arrivals and
+    /// departures interleave, which is what exposed it. Several rounds, so a
+    /// regression fails every run rather than most of them.
+    @Test func theFetchLimiterHoldsItsLimitAsCallersKeepArriving() async {
+        var peak = 0
+        for _ in 0..<5 {
+            let limiter = FetchLimiter(limit: 3)
+            let tracker = ConcurrencyPeak()
+
+            await withTaskGroup(of: Void.self) { group in
+                for index in 0..<40 {
+                    group.addTask {
+                        for _ in 0..<(index % 7) { await Task.yield() }
+                        await limiter.run {
+                            await tracker.enter()
+                            for _ in 0..<5 { await Task.yield() }
+                            await tracker.leave()
+                        }
+                    }
+                }
+            }
+            peak = max(peak, await tracker.peak)
+        }
+
+        #expect(peak <= 3)
+        #expect(peak > 1)
     }
 
     /// Each guarantee about where bytes travel has to hold on every hop:
@@ -351,11 +401,16 @@ private actor ConcurrencyPeak {
     }
 }
 
-/// The opt-in gate. "Zero network calls unless asked" is the app's stated
-/// privacy promise, so these pin the default and the inertness — not the
-/// fetch, which is never exercised here.
+/// The setting's gate. Favicons are on by default, and turning them off has
+/// to make the feature inert — no request and no disk read — so these pin the
+/// default and the inertness. The fetch itself runs only against
+/// `FaviconNetworkOverride`, never a real host.
+///
+/// Serialized because every test here shares `Favicons.shared`: a clear in
+/// one would cancel another's download and reset its bookkeeping while it
+/// was suspended.
 @MainActor
-@Suite("FaviconFetching")
+@Suite("FaviconFetching", .serialized)
 struct FaviconFetchingTests {
     /// nil means the key is absent, as on a fresh install. The store belongs
     /// to this call, so an absent key really is absent rather than whatever a
@@ -393,24 +448,59 @@ struct FaviconFetchingTests {
         try await withFetching(false) { #expect(!FaviconFetching.isEnabled) }
     }
 
+    /// Runs `body` with every request a lookup makes written down and left
+    /// unanswered, instead of sent: a test that expects no request can say
+    /// so, and a regression that made one costs no real traffic. Returns the
+    /// URLs asked for, in order.
+    private func requests(during body: () async throws -> Void) async rethrows -> [String] {
+        let log = NetworkLog()
+        try await FaviconNetworkOverride.$respond.withValue({ url in
+            await log.record(url.absoluteString)
+            return nil
+        }) {
+            try await body()
+        }
+        return await log.entries
+    }
+
     @Test func withTheSettingOffALookupIsInertForEveryHost() async throws {
         try await withFetching(false) {
-            // The gate is checked before the host rules, the memory cache and
-            // the disk cache, so turning the setting back off makes the
-            // feature inert rather than merely quiet — nothing an earlier
-            // opt-in left on disk is read.
-            let url = URL(string: "https://github.com/m2na7/backpocket")!
-            #expect(await Favicons.shared.icon(for: url) == nil)
+            try await withTemporaryCache { _ in
+                // The gate is checked before the host rules, the memory cache
+                // and the disk cache, so turning the setting back off makes
+                // the feature inert rather than merely quiet — nothing an
+                // earlier opt-in left on disk is read. This is such an icon.
+                let icon = try Fixture.png(width: 16, height: 16)
+                try icon.write(to: Favicons.cacheFile(for: "github.com"))
+
+                let url = URL(string: "https://github.com/m2na7/backpocket")!
+                let asked = await requests {
+                    #expect(await Favicons.shared.icon(for: url) == nil)
+                }
+                #expect(asked.isEmpty)
+            }
         }
     }
 
     @Test func withTheSettingOnAnUnfetchableHostStillNeverStartsALookup() async throws {
         try await withFetching(true) {
-            // The host rules are the second gate. A LAN address must not be
-            // contacted even by a user who opted in.
-            #expect(await Favicons.shared.icon(for: URL(string: "https://192.168.0.5/")!) == nil)
-            #expect(await Favicons.shared.icon(for: URL(string: "https://localhost/")!) == nil)
-            #expect(await Favicons.shared.icon(for: URL(string: "https://secret.onion/")!) == nil)
+            // An empty temporary cache, not the real one. There, a lookup
+            // that slipped past a broken host rule would find the miss
+            // marker an earlier such run had left and return before asking
+            // anything, so this could not fail; and the first such run would
+            // write those markers into the user's own cache.
+            try await withTemporaryCache { _ in
+                // The host rules are the second gate. A LAN address must not
+                // be contacted even by a user who opted in, so what counts is
+                // that nothing was asked, not only that nothing came back.
+                let asked = await requests {
+                    for host in ["192.168.0.5", "localhost", "secret.onion"] {
+                        let url = URL(string: "https://\(host)/")!
+                        #expect(await Favicons.shared.icon(for: url) == nil)
+                    }
+                }
+                #expect(asked.isEmpty)
+            }
         }
     }
 
@@ -480,9 +570,9 @@ struct FaviconFetchingTests {
     }
 
     @Test func adeadHostIsRememberedAsDeadRatherThanReProbed() async throws {
-        // Three requests per launch per dead host is the cost of getting this
-        // backwards, and the other direction is worse: read the absence of a
-        // marker as a recorded failure and no host is ever fetched at all.
+        // Up to four requests per launch per dead host is the cost of getting
+        // this backwards, and the other direction is worse: read the absence
+        // of a marker as a recorded failure and no host is ever fetched at all.
         try await withTemporaryCache { directory in
             #expect(await Favicons.diskEntry(host: "never-seen.example") == nil)
 
@@ -527,15 +617,226 @@ struct FaviconFetchingTests {
         }
     }
 
+    /// Settings and "Reset everything" both call this; a cache that survived
+    /// would keep serving icons from hosts the user just wiped. That means
+    /// memory as well as disk: the icons already shown and the hosts already
+    /// written off have to go too, and the disk half is pinned above.
     @Test func clearingLeavesNothingBehind() async throws {
-        // Settings and "Reset everything" both call this; a cache that
-        // survived would keep serving icons from hosts the user just wiped.
-        try withTemporaryCache { _ in
-            Favicons.clearCachedIcons()
-        }
+        try await withFetching(true) {
+            try await withTemporaryCache { directory in
+                let served = Self.uniqueHost()
+                let dead = Self.uniqueHost()
+                let icon = try Fixture.png(width: 16, height: 16)
+                func lookup(_ host: String) async -> NSImage? {
+                    await Favicons.shared.icon(for: URL(string: "https://\(host)/")!)
+                }
 
-        try await withFetching(false) {
-            #expect(await Favicons.shared.icon(for: URL(string: "https://github.com/")!) == nil)
+                // Both read from disk, so both are now remembered in memory:
+                // one as an icon, the other as a host that has none.
+                try icon.write(to: Favicons.cacheFile(for: served))
+                try Data().write(to: directory.appending(path: "\(dead).miss"))
+                #expect(await lookup(served) != nil)
+                #expect(await lookup(dead) == nil)
+
+                Favicons.clearCachedIcons()
+
+                // Each host's disk entry now says the opposite, and a lookup
+                // reads the disk only when memory has nothing to say, so each
+                // answer flips only if memory really was cleared. The marker
+                // is also what keeps the first of these off the network.
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true)
+                try Data().write(to: directory.appending(path: "\(served).miss"))
+                try icon.write(to: Favicons.cacheFile(for: dead))
+                let asked = await requests {
+                    #expect(await lookup(served) == nil)
+                    #expect(await lookup(dead) != nil)
+                }
+                #expect(asked.isEmpty)
+            }
+        }
+    }
+
+    /// An entry past two weeks is neither served nor kept: an icon captured
+    /// through a captive portal must not stand for the site forever, and a
+    /// host that had no icon is asked again. The fresh entry is the control,
+    /// so a reader that never served anything could not pass.
+    @Test func anExpiredEntryIsNeitherServedNorKept() async throws {
+        try await withTemporaryCache { directory in
+            let png = Data([0x89, 0x50, 0x4E, 0x47])
+            let now = Date.now
+            let entries = [
+                ("stale.example.png", png, 15), ("stale-dead.example.miss", Data(), 15),
+                ("fresh.example.png", png, 1),
+            ]
+            for (name, contents, days) in entries {
+                let file = directory.appending(path: name)
+                try contents.write(to: file)
+                try FileManager.default.setAttributes(
+                    [.modificationDate: now.addingTimeInterval(TimeInterval(-days * 86_400))],
+                    ofItemAtPath: file.path(percentEncoded: false))
+            }
+
+            #expect(await Favicons.diskEntry(host: "stale.example") == nil)
+            #expect(await Favicons.diskEntry(host: "stale-dead.example") == nil)
+            #expect(await Favicons.diskEntry(host: "fresh.example") == .icon(png))
+
+            Favicons.prune()
+
+            let left = try FileManager.default.contentsOfDirectory(
+                atPath: directory.path(percentEncoded: false))
+            #expect(left == ["fresh.example.png"])
+        }
+    }
+
+    // MARK: Clearing while a download is in flight
+
+    /// A host no other test asks for, so the shared memory cache and failure
+    /// set cannot answer for it before the download runs.
+    private static func uniqueHost() -> String {
+        "race-\(UUID().uuidString.lowercased()).example"
+    }
+
+    /// One row asking for `host`'s icon, with `network` answering every
+    /// request its download makes. Reports whether the row got an icon.
+    private func row(
+        _ host: String, network: @escaping @Sendable (URL) async -> Data?
+    ) -> Task<Bool, Never> {
+        let url = URL(string: "https://\(host)/")!
+        return FaviconNetworkOverride.$respond.withValue(network) {
+            Task { await Favicons.shared.icon(for: url) != nil }
+        }
+    }
+
+    /// "Reset everything" exists so no list of copied domains is left behind.
+    /// A download whose last byte arrived just as the reset landed used to
+    /// write its host straight back into the directory the reset emptied.
+    @Test func aDownloadFinishingAsTheCacheIsClearedWritesNothingBack() async throws {
+        let icon = try tiffData(side: 16)
+        try await withFetching(true) {
+            try await withTemporaryCache { _ in
+                let host = Self.uniqueHost()
+                let lookup = row(host) { _ in
+                    await MainActor.run { Favicons.clearCachedIcons() }
+                    return icon
+                }
+                _ = await lookup.value
+
+                let file = Favicons.cacheFile(for: host)
+                #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
+            }
+        }
+    }
+
+    /// Clearing cancels the download, and a cancelled download comes back
+    /// empty. That emptiness says nothing about the host, but the row waiting
+    /// on it used to record the host as having no icon — a globe for the rest
+    /// of the session, from a clear that promised to forget the failures.
+    @Test func aHostInFlightDuringAClearIsAskedAgainRatherThanMarkedDead() async throws {
+        let icon = try tiffData(side: 16)
+        try await withFetching(true) {
+            try await withTemporaryCache { _ in
+                let host = Self.uniqueHost()
+                let cleared = row(host) { _ in
+                    await MainActor.run { Favicons.clearCachedIcons() }
+                    return nil
+                }
+                #expect(await cleared.value == false)
+
+                let later = row(host) { $0.lastPathComponent == "favicon.ico" ? icon : nil }
+                #expect(await later.value)
+            }
+        }
+    }
+
+    /// A row from before a clear finishing after it. The clear discarded that
+    /// row's count, so leaving used to decrement the next generation's
+    /// instead and could drop the download a newer row was sharing — the
+    /// next row for the host then started a second one.
+    @Test(.timeLimit(.minutes(1)))
+    func aRowFromBeforeAClearCannotDropTheNextDownload() async throws {
+        let icon = try tiffData(side: 16)
+        let log = NetworkLog()
+        let (firstAsked, releaseFirst) = (Latch(), Latch())
+        let (secondAsked, releaseSecond) = (Latch(), Latch())
+
+        try await withFetching(true) {
+            try await withTemporaryCache { _ in
+                let host = Self.uniqueHost()
+                let stale = row(host) { _ in
+                    await firstAsked.open()
+                    await releaseFirst.wait()
+                    return nil
+                }
+                await firstAsked.wait()
+                Favicons.clearCachedIcons()
+
+                let current = row(host) { url in
+                    await secondAsked.open()
+                    await releaseSecond.wait()
+                    return url.lastPathComponent == "favicon.ico" ? icon : nil
+                }
+                await secondAsked.wait()
+
+                await releaseFirst.open()
+                _ = await stale.value
+
+                // Joins the download already under way rather than starting
+                // its own; any request this row's network sees is a new one.
+                let joining = row(host) { _ in
+                    await log.record("third download")
+                    return nil
+                }
+                await releaseSecond.open()
+
+                #expect(await current.value)
+                #expect(await joining.value)
+                #expect(await log.entries.isEmpty)
+            }
+        }
+    }
+
+    /// The same stale row, cancelled rather than finishing. Being the only
+    /// waiter it had counted, it used to cancel whatever download was now in
+    /// flight for the host — the one a newer row, still on screen, was
+    /// waiting on.
+    @Test(.timeLimit(.minutes(1)))
+    func aRowFromBeforeAClearCannotCancelTheNextDownload() async throws {
+        let icon = try tiffData(side: 16)
+        let log = NetworkLog()
+        let (firstAsked, releaseFirst) = (Latch(), Latch())
+        let (secondAsked, releaseSecond) = (Latch(), Latch())
+
+        try await withFetching(true) {
+            try await withTemporaryCache { _ in
+                let host = Self.uniqueHost()
+                let stale = row(host) { _ in
+                    await firstAsked.open()
+                    await releaseFirst.wait()
+                    return nil
+                }
+                await firstAsked.wait()
+                Favicons.clearCachedIcons()
+
+                let current = row(host) { url in
+                    await secondAsked.open()
+                    await releaseSecond.wait()
+                    if Task.isCancelled { await log.record("cancelled") }
+                    return url.lastPathComponent == "favicon.ico" ? icon : nil
+                }
+                await secondAsked.wait()
+
+                // The row scrolls away. Its cancellation is delivered to the
+                // main actor as a task of its own, so let that run first.
+                stale.cancel()
+                await Task.yield()
+                await releaseFirst.open()
+                _ = await stale.value
+
+                await releaseSecond.open()
+                #expect(await current.value)
+                #expect(await log.entries.isEmpty)
+            }
         }
     }
 }

@@ -29,8 +29,10 @@ PKG_ID="$(security find-identity -v |
 PROFILE="${BACKPOCKET_PROFILE:-packaging/Backpocket_Mac_App_Store.provisionprofile}"
 [ -f "$PROFILE" ] || die "no provisioning profile at $PROFILE"
 
-git diff --quiet && git diff --cached --quiet ||
-  die "working tree is dirty; a submission must be reproducible from a commit"
+# Untracked files count: SwiftPM compiles every source under Sources/ and
+# build.sh copies every .lproj, tracked or not.
+[ -z "$(git status --porcelain)" ] ||
+  die "working tree is dirty or has untracked files; a submission must be reproducible from a commit"
 
 echo "  app identity: $APP_ID"
 echo "  pkg identity: $PKG_ID"
@@ -76,6 +78,20 @@ codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q application-iden
 echo "  no Sparkle, profile embedded, sandboxed, category and icon present, signature verifies"
 
 step "Packaging the installer"
+
+# The store ships this stripped binary, so its crash reports symbolicate only
+# against this build's dSYM, and the next build of either variant deletes
+# it. Archived beside the package, once its UUIDs prove it is this binary's:
+# a dSYM from another build yields confident nonsense rather than an error.
+[ -d "$APP.dSYM" ] || die "no dSYM at $APP.dSYM — was this a release build?"
+BIN_UUIDS="$(dwarfdump --uuid "$APP/Contents/MacOS/Backpocket" | awk '{print $2, $3}' | sort)"
+DSYM_UUIDS="$(dwarfdump --uuid "$APP.dSYM" | awk '{print $2, $3}' | sort)"
+[ -n "$BIN_UUIDS" ] && [ "$BIN_UUIDS" = "$DSYM_UUIDS" ] ||
+  die "the dSYM does not match the binary — crash reports could not be symbolicated"
+DSYM_ZIP="build/Backpocket-$VERSION-mas.dSYM.zip"
+rm -f "$DSYM_ZIP"
+ditto -c -k --norsrc --noextattr --noqtn --zlibCompressionLevel 9 --keepParent "$APP.dSYM" "$DSYM_ZIP"
+
 PKG="build/Backpocket-$VERSION.pkg"
 rm -f "$PKG"
 productbuild --component "$APP" /Applications --sign "$PKG_ID" "$PKG"
@@ -84,6 +100,11 @@ pkgutil --check-signature "$PKG" | head -3
 cat <<MSG
 
 Built $PKG
+  and $DSYM_ZIP, its symbols:
+$(printf '%s\n' "$BIN_UUIDS" | sed 's/^/    /')
+
+Keep the two together: crash reports from this build cannot be symbolicated
+without the symbols, and they cannot be made again from source.
 
 Upload it with:
   xcrun altool --upload-app -f "$PKG" -t macos \\

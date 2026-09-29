@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `Cmd+Z` restores a delete under Korean, Japanese kana, Cyrillic and Greek input sources too. It matched the letter typed, and those layouts never type a "z".
+- The hover card closes as soon as the row it shows is deleted, instead of staying up while the pointer rests on it.
+- When the disk refuses a write, the list now shows what is actually stored — a failed Clear History no longer empties the list only for the rows to return at the next launch — and `Cmd+Z` is no longer offered for a delete that did not happen.
+
+### Changed
+- A smaller download: about 15% less, from an app icon without an unused alpha channel and from parts of the update framework this app never runs.
+- Image clips no longer stay in memory once copied, pasted or previewed, and pasting one is faster: the second image format is made only when the app you paste into asks for it.
+- Typing in the search field does less work per keystroke on a long history.
+- The privacy policy now says plainly that a site's favicon can come from the host the site names for it, such as its CDN — which is what the app has always done.
+
 ## [0.1.5] - 2026-09-06
 
 ### Changed

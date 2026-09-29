@@ -1,0 +1,222 @@
+#if DEBUG
+import AppKit
+
+/// The fixture content behind `--demo` (see `DebugLaunch`). It only calls the
+/// store's own API, so it lives apart from the composition root that invokes
+/// it. Debug builds only.
+@MainActor
+enum DemoSeed {
+    /// Fills an empty store with content that shows the product off: real
+    /// source apps so icons resolve, varied content kinds, two pins, one image.
+    /// "ko" swaps the prose and the notes for Korean — the code, commands and
+    /// links read the same in either language — so Korean store pictures show
+    /// what a Korean user's history looks like.
+    static func seed(into store: Store, language: String? = nil) async {
+        let korean = language == "ko"
+        func text(_ english: String, _ hangul: String) -> String {
+            korean ? hangul : english
+        }
+
+        let chrome = CopySource(name: "Google Chrome", bundleID: "com.google.Chrome")
+        let cursor = CopySource(name: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92")
+        let code = CopySource(name: "Visual Studio Code", bundleID: "com.microsoft.VSCode")
+        let terminal = CopySource(name: "Terminal", bundleID: "com.apple.Terminal")
+        let slack = CopySource(name: "Slack", bundleID: "com.tinyspeck.slackmacgap")
+        let figma = CopySource(name: "Figma", bundleID: "com.figma.Desktop")
+        let notion = CopySource(name: "Notion", bundleID: "notion.id")
+
+        // Oldest first: every add lands at the front, so the last call ends
+        // up at the top of the list.
+        store.addNote(
+            text(
+                "First sketch — clipboard history and notes in one panel",
+                "첫 스케치 — 클립보드 기록과 메모를 한 패널에"))
+        store.addNote(
+            text(
+                "Design review Thu 2pm — bring the empty-state options",
+                "목요일 오후 2시 디자인 리뷰 — 빈 화면 시안 챙기기"))
+        store.add("https://react.dev/reference/react/useSyncExternalStore", source: chrome)
+        store.add("#2F81F7", source: figma)
+        store.add(
+            """
+            type Result<T, E = Error> =
+              | { ok: true; value: T }
+              | { ok: false; error: E }
+            """,
+            source: cursor
+        )
+        store.add("https://www.typescriptlang.org/docs/handbook/2/generics.html", source: chrome)
+        store.addNote(
+            text(
+                "Standup 10:30 — demo the panel, collect feedback",
+                "10:30 스탠드업 — 패널 데모하고 피드백 모으기"))
+        store.add("pnpm dlx shadcn@latest add dialog", source: terminal)
+        store.add(
+            """
+            export function useDebounced<T>(value: T, delay = 300): T {
+              const [debounced, setDebounced] = useState(value)
+              useEffect(() => {
+                const id = setTimeout(() => setDebounced(value), delay)
+                return () => clearTimeout(id)
+              }, [value, delay])
+              return debounced
+            }
+            """,
+            source: cursor
+        )
+        store.add("https://github.com/m2na7/Backpocket/pull/12", source: chrome)
+        store.add(
+            "{\"name\": \"backpocket\", \"version\": \"1.4.0\", \"channels\": [\"beta\", \"stable\"]}",
+            source: code
+        )
+        store.addNote(
+            text(
+                "Ask design about the empty state — it reads too quiet",
+                "빈 화면이 너무 밋밋함 — 디자인팀에 물어보기"))
+        store.add("git rebase -i origin/main --autosquash", source: terminal)
+        store.add(
+            text(
+                "Can you take the flaky test in CI? It fails ~1 in 5 on the runner.",
+                "CI에서 가끔 깨지는 테스트 좀 봐줄 수 있어요? 5번에 1번꼴로 실패해요."),
+            source: slack
+        )
+        store.add("https://news.ycombinator.com/item?id=41802570", source: chrome)
+        store.add(
+            """
+            const Panel = forwardRef<HTMLDivElement, PanelProps>(
+              ({ items, onSelect }, ref) => (
+                <div ref={ref} role="listbox">
+                  {items.map((item) => (
+                    <Row key={item.id} item={item} onSelect={onSelect} />
+                  ))}
+                </div>
+              )
+            )
+            """,
+            source: cursor
+        )
+        store.addNote(
+            text(
+                "Release notes draft: image clips, faster search, new hotkey",
+                "릴리스 노트 초안: 이미지 클립, 더 빠른 검색, 새 단축키"))
+        store.add("https://vercel.com/docs/functions/streaming", source: chrome)
+        store.add(
+            text(
+                """
+                ## Panel keyboard
+                - `Enter` pastes the selected clip
+                - `Cmd+Enter` pastes a note
+                """,
+                """
+                ## 패널 키보드
+                - `Enter` 선택한 클립 붙여넣기
+                - `Cmd+Enter` 메모 붙여넣기
+                """),
+            source: notion
+        )
+        store.add("npm error ERESOLVE could not resolve peer react@^19.0.0", source: terminal)
+        store.addNote(
+            text(
+                "Ship 0.2 before the conference — cut scope if it slips",
+                "컨퍼런스 전에 0.2 출시 — 밀리면 범위 줄이기"))
+        store.add(
+            text(
+                "The best interface is the one you never notice — it simply keeps up.",
+                "가장 좋은 인터페이스는 눈치채지 못하는 인터페이스다 — 그저 곁에서 따라올 뿐."),
+            source: chrome
+        )
+        if let png = gradientPNG() {
+            store.addImage(png, source: figma)
+            // Image capture hashes and thumbnails off the main actor, so the
+            // row is not in `items` yet. Without this wait the spread below
+            // skips it and the demo image alone reads "now" — which makes the
+            // screenshots this flag exists for unreproducible.
+            await store.imageCapturesDidFinish()
+        }
+
+        for prefix in ["git rebase", "#2F81F7"] {
+            if let pinned = store.items.first(where: { $0.content.hasPrefix(prefix) }) {
+                store.togglePin(pinned)
+            }
+        }
+
+        // Every add stamped usedAt with "now". Clips and notes are spread
+        // differently on purpose: clips expire (default seven days) and would
+        // be purged out of the demo before it could be filmed, while notes
+        // never expire and are what the notes column groups into Today, Last
+        // 7 Days, months and years. So the deep past belongs to the notes and
+        // the clips stay inside the retention window.
+        //
+        // `items` is the pinned block first, then usedAt descending within
+        // each block, and Store re-sorts it only in togglePin and undoDelete,
+        // so nothing re-sorts it after this spread. Both passes therefore
+        // walk it in order and assign strictly descending dates within their
+        // own kind: each column lists one kind in `items` order.
+        var clipDate = Date().addingTimeInterval(-120)
+        var clipGap: TimeInterval = 900
+        var noteAge: [TimeInterval] = [
+            60 * 30,
+            3600 * 26,
+            86400 * 4,
+            86400 * 26,
+            86400 * 200,
+            86400 * 400,
+        ]
+        for item in store.items {
+            if item.isNote {
+                let age = noteAge.isEmpty ? 86400 * 500 : noteAge.removeFirst()
+                item.usedAt = Date().addingTimeInterval(-age)
+            } else {
+                item.usedAt = clipDate
+                clipDate -= clipGap
+                // Widening, but capped so the whole spread, not just each
+                // gap, stays inside the seven-day default and nothing in the
+                // demo is eligible for expiry. At 0.9 days the gaps summed to
+                // about 7.3 and the oldest clip was purged on the first open;
+                // at 0.75 the oldest sits near 6.4. DemoSeedTests holds it
+                // there as clips are added.
+                clipGap = min(clipGap * 1.6, 86400 * 0.75)
+            }
+            item.createdAt = item.usedAt
+        }
+        store.persistDemoSeed()
+    }
+
+    /// 640×400 gradient rendered with CoreGraphics — generated at runtime so
+    /// no image asset ships in the bundle for a debug-only feature.
+    private static func gradientPNG() -> Data? {
+        let width = 640, height = 400
+        guard
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ),
+            let gradient = CGGradient(
+                colorsSpace: space,
+                colors: [
+                    CGColor(red: 0.30, green: 0.41, blue: 0.95, alpha: 1),
+                    CGColor(red: 0.89, green: 0.37, blue: 0.62, alpha: 1),
+                ] as CFArray,
+                locations: nil
+            )
+        else { return nil }
+
+        context.drawLinearGradient(
+            gradient,
+            start: .zero,
+            end: CGPoint(x: width, y: height),
+            options: []
+        )
+
+        return context.makeImage().flatMap {
+            NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:])
+        }
+    }
+}
+#endif

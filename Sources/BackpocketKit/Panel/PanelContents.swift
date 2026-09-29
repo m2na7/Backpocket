@@ -18,6 +18,11 @@ import Foundation
 struct PanelContents {
     private(set) var lists = PanelLists()
     private(set) var rows = PaneRows()
+    /// The snapshot both were filtered from, kept so the next keystroke can
+    /// filter it again instead of the store. It travels with them for the
+    /// same reason they travel together: replaced whole, the lists can never
+    /// be ahead of or behind the index they came from.
+    private(set) var index = PanelIndex()
 
     var clips: [Item] { lists.clips }
     var links: [Item] { lists.links }
@@ -45,6 +50,8 @@ struct PanelContents {
         pane == .notes ? !notes.isEmpty : !(clips.isEmpty && links.isEmpty)
     }
 
+    /// Straight from a list of items, indexing them on the way. The panel
+    /// keeps its index between keystrokes and calls the overload below.
     @MainActor
     static func make(
         items: [Item],
@@ -52,7 +59,18 @@ struct PanelContents {
         links collection: LinkCollection,
         now: Date = Date()
     ) -> PanelContents {
-        let lists = PanelLists.make(items: items, query: query, links: collection, now: now)
-        return PanelContents(lists: lists, rows: PaneRows(lists))
+        make(index: PanelIndex(items: items), query: query, links: collection, now: now)
+    }
+
+    @MainActor
+    static func make(
+        index: PanelIndex,
+        query: String,
+        links collection: LinkCollection,
+        now: Date = Date()
+    ) -> PanelContents {
+        let matches = PanelLists.Matches(index, query: query, links: collection)
+        return PanelContents(
+            lists: PanelLists(matches, now: now), rows: PaneRows(matches), index: index)
     }
 }

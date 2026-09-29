@@ -27,7 +27,6 @@ struct StackBadge: View {
 }
 
 /// The ⌘-slot chip that takes the row icon's place while Command is held.
-/// Sizes to its label so the links section's "⇧3" fits the same shape.
 struct ShortcutChip: View {
     let label: String
 
@@ -41,6 +40,23 @@ struct ShortcutChip: View {
             // Only on screen while ⌘ is held, which is a pointer-and-modifier
             // gesture; VoiceOver reaches every row without it.
             .accessibilityHidden(true)
+    }
+}
+
+/// The selection behind a clip, link or note row, which also makes the whole
+/// row clickable rather than only its drawn parts.
+struct RowHighlight: ViewModifier {
+    let highlighted: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
+            )
+            // The highlight must snap, not fade — a fade reads as lag.
+            .animation(nil, value: highlighted)
+            .contentShape(Rectangle())
     }
 }
 

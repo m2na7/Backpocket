@@ -96,14 +96,16 @@ enum CodeLanguage: String {
         needles.contains { text.contains($0) }
     }
 
+    /// Unfenced markdown only: fenced text never gets here, because `detect`
+    /// returns `.markdown` for any ``` before the code checks run.
     private static func isMarkdown(_ text: String) -> Bool {
         let lines = text.components(separatedBy: "\n")
         let marked = lines.filter { line in
             let l = line.trimmingCharacters(in: .whitespaces)
             return l.hasPrefix("#") || l.hasPrefix("- ") || l.hasPrefix("* ")
-                || l.hasPrefix("```") || l.hasPrefix("> ")
+                || l.hasPrefix("> ")
         }
-        return marked.count >= 2 || text.contains("```")
+        return marked.count >= 2
     }
 }
 
@@ -157,8 +159,9 @@ extension NSColor {
 
 /// Dependency-free token colorer for the detail view.
 enum SyntaxHighlighter {
-    /// Scanning a huge paste would delay the panel from appearing.
-    /// Only the head gets colored; the rest is left plain.
+    /// Scanning a huge paste would delay the panel from appearing. Past the
+    /// limit none of it is highlighted: the whole text comes back in the
+    /// theme's plain color.
     private static let limit = 6_000
 
     static func highlight(
