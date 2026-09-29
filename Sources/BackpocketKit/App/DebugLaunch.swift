@@ -13,6 +13,19 @@ import Foundation
 ///     Backpocket --demo                 seed demo content into an empty store
 ///     Backpocket --stack=N              pre-collect the first N clips into the paste stack
 ///     Backpocket --snapshot=/tmp/x.png  render the panel to a PNG and exit
+///
+/// Store captures — App Store screenshots and previews — add:
+///
+///     Backpocket --capture              run isolated: no clipboard watch, hotkey or prompt
+///     Backpocket --favicons=/tmp/icons  keep favicons in a cache of the capture's own
+///     Backpocket --demo-lang=ko         seed the Korean demo content instead
+///     Backpocket --note=text            add a note after seeding, as if just saved
+///     Backpocket --pane=notes           focus a pane: clips, links or notes
+///     Backpocket --select=N             select row N of that pane, so its card appears
+///     Backpocket --shortcuts            show the numbers holding ⌘ shows
+///     Backpocket --appearance=dark      draw dark or light, regardless of the system setting
+///     Backpocket --snapshot-scale=3     with --snapshot-dir, render at 3 pixels per point
+///     Backpocket --snapshot-dir=/tmp/x  render every open window to x, with frames
 enum DebugLaunch {
     static var openPanel: Bool { has("--open") }
     static var openEditor: Bool { has("--edit") }
@@ -29,6 +42,35 @@ enum DebugLaunch {
     /// Renders the panel to a PNG and exits. Works even when no display is
     /// awake, so documentation screenshots are reproducible anywhere.
     static var snapshotPath: String? { value(for: "--snapshot") }
+
+    /// A capture runs beside the copy the user actually uses, so it touches
+    /// nothing of theirs: a copy made during it would otherwise land in the
+    /// pictures, the installed copy already owns the global shortcut, and an
+    /// Accessibility prompt would appear on every run.
+    static var isCapture: Bool { has("--capture") }
+    /// Where favicons are cached instead of the real cache, which a capture
+    /// must neither read from nor add to.
+    static var faviconCachePath: String? { value(for: "--favicons") }
+    /// "ko" seeds the Korean demo content; anything else, the English.
+    static var demoLanguage: String? { value(for: "--demo-lang") }
+    /// Added after the demo seed, so it tops the notes column the way a note
+    /// just saved from the field does.
+    static var extraNote: String? { value(for: "--note") }
+    static var pane: String? { value(for: "--pane") }
+    /// Selected as the keyboard would select it, which is what lets the
+    /// detail card grow against the row after the usual dwell.
+    static var selectRow: Int? { value(for: "--select").flatMap(Int.init) }
+    static var showsShortcuts: Bool { has("--shortcuts") }
+    /// "dark" or "light", regardless of the system setting. The
+    /// `-AppleInterfaceStyle` argument does not reach a running app.
+    static var appearance: String? { value(for: "--appearance") }
+    /// Each open window as its own PNG plus frames.json, for compositing:
+    /// the detail card and the editor are windows of their own.
+    static var snapshotDirectory: String? { value(for: "--snapshot-dir") }
+    /// Pixels per point for `--snapshot-dir`, instead of the screen's own.
+    static var snapshotScale: CGFloat? {
+        value(for: "--snapshot-scale").flatMap(Double.init).map { CGFloat($0) }
+    }
 
     private static func has(_ flag: String) -> Bool {
         CommandLine.arguments.contains(flag)

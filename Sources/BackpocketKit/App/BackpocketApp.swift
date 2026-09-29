@@ -54,6 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
 
+        #if DEBUG
+        // Before any window exists, so every one of them draws in it.
+        if let look = DebugLaunch.appearance {
+            NSApp.appearance = NSAppearance(named: look == "dark" ? .darkAqua : .aqua)
+        }
+        #endif
+
         // Read before anything can rewrite it: the bundle's localization is
         // fixed by now, and Settings compares against this to decide whether
         // a relaunch is actually pending.
@@ -74,7 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 store.addImage(data, source: source)
             }
         }
-        watcher.start()
+        if !isCaptureRun {
+            watcher.start()
+        }
 
         panel = BackpocketPanel(
             rootView: ContentView(
@@ -95,14 +104,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.detailPanel.hide()
         }
 
-        applyHotKey()
+        if !isCaptureRun {
+            applyHotKey()
 
-        if PasteBehavior.isAutomatic, !Paster.isTrusted {
-            Paster.requestAccessibility()
+            if PasteBehavior.isAutomatic, !Paster.isTrusted {
+                Paster.requestAccessibility()
+            }
         }
 
         #if DEBUG
         Task { await applyDebugLaunchOptions() }
+        #endif
+    }
+
+    /// See `DebugLaunch.isCapture`. Always false in a release build.
+    private var isCaptureRun: Bool {
+        #if DEBUG
+        DebugLaunch.isCapture
+        #else
+        false
         #endif
     }
 
@@ -300,14 +320,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // same reason: image capture completes off the main actor, and
         // opening the panel first would race the row into view.
         if DebugLaunch.seedDemo, let store, store.items.isEmpty {
-            await DemoSeed.seed(into: store)
+            await DemoSeed.seed(into: store, language: DebugLaunch.demoLanguage)
+        }
+        if let note = DebugLaunch.extraNote {
+            store?.addNote(note)
         }
 
         // --snapshot= implies a panel to capture. Without this it fell under
         // the guard and the process sat there forever, having written no PNG
         // and reported nothing — and CONTRIBUTING lists the two flags as
         // independent, so passing --snapshot= alone is the documented usage.
-        guard DebugLaunch.openPanel || DebugLaunch.snapshotPath != nil else { return }
+        guard
+            DebugLaunch.openPanel || DebugLaunch.snapshotPath != nil
+                || DebugLaunch.snapshotDirectory != nil
+        else { return }
 
         panel?.autoHidesOnResignKey = false
         togglePanel()
@@ -316,6 +342,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // includes anything else on screen.
         if let screen = NSScreen.main {
             panel?.setFrameTopLeftPoint(NSPoint(x: 40, y: screen.frame.maxY - 40))
+        }
+        if DebugLaunch.query != nil {
+            // Focusing a filled field selects all of it. A capture of typing
+            // should show the caret after the text instead, the way it sits
+            // while someone is still typing.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                if let editor = self?.panel?.firstResponder as? NSTextView {
+                    let end = (editor.string as NSString).length
+                    editor.setSelectedRange(NSRange(location: end, length: 0))
+                }
+            }
         }
         if DebugLaunch.openEditor, let first = store?.items.first(where: \.isNote) {
             edit(first)
@@ -326,6 +363,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let path = DebugLaunch.snapshotPath {
             snapshotPanel(to: path)
         }
+        if let directory = DebugLaunch.snapshotDirectory {
+            snapshotWindows(to: URL(fileURLWithPath: directory, isDirectory: true))
+        }
+    }
+
+    /// Every window the flags opened, each drawn to its own PNG, with the
+    /// frames that place them relative to one another in frames.json. A store
+    /// picture composes them itself: the detail card and the editor are
+    /// windows beside the panel, and one capture of the panel leaves them out.
+    /// Later than `snapshotPanel`, so a selected row's card has had its dwell.
+    private func snapshotWindows(to directory: URL) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            defer { NSApplication.shared.terminate(nil) }
+            guard let self else { return }
+            try? FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true)
+
+            var frames: [[String: Any]] = []
+            for window in NSApplication.shared.windows where window.isVisible {
+                let role: String
+                if window === panel {
+                    role = "panel"
+                } else if window is EditPanel {
+                    role = "editor"
+                } else if window.contentViewController is NSTabViewController {
+                    role = "settings"
+                } else if window is NSPanel, window.ignoresMouseEvents {
+                    role = "detail"
+                } else {
+                    continue
+                }
+                guard let view = window.contentView, let bitmap = captureBitmap(of: view)
+                else { continue }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try? bitmap.representation(using: .png, properties: [:])?
+                    .write(to: directory.appending(path: "\(role).png"))
+                frames.append([
+                    "role": role,
+                    "x": window.frame.minX, "y": window.frame.minY,
+                    "width": window.frame.width, "height": window.frame.height,
+                    "scale": window.backingScaleFactor,
+                ])
+            }
+            if let json = try? JSONSerialization.data(
+                withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
+            {
+                try? json.write(to: directory.appending(path: "frames.json"))
+            }
+        }
+    }
+
+    /// A bitmap at the window's own scale, or at `--snapshot-scale=` when a
+    /// store picture needs the interface larger than a Retina screen draws it.
+    private func captureBitmap(of view: NSView) -> NSBitmapImageRep? {
+        guard let scale = DebugLaunch.snapshotScale else {
+            return view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        }
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(view.bounds.width * scale),
+            pixelsHigh: Int(view.bounds.height * scale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+        bitmap?.size = view.bounds.size
+        return bitmap
     }
 
     /// Whichever window the other debug flags opened.

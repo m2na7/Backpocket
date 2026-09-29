@@ -978,6 +978,30 @@ struct ContentView: View {
         }
         #endif
         selection.reset(to: contents.rows)
+        #if DEBUG
+        applyDebugSelection()
+        #endif
         fieldFocused = true
     }
+
+    #if DEBUG
+    /// The pane, row and ⌘ state the capture flags ask for, on top of the
+    /// opening state `reset` just established. A user-made selection, so the
+    /// detail card grows against it after the usual dwell.
+    private func applyDebugSelection() {
+        let panes: [String: Pane] = ["clips": .clips, "links": .links, "notes": .notes]
+        if let name = DebugLaunch.pane, let pane = panes[name] {
+            selection.focus(pane, in: contents.rows, origin: .user)
+        }
+        if let row = DebugLaunch.selectRow {
+            let ids = contents.rows[selection.pane]
+            if ids.indices.contains(row) {
+                selection.select(ids[row], in: selection.pane, origin: .user)
+            }
+        }
+        if DebugLaunch.showsShortcuts {
+            showsShortcuts = true
+        }
+    }
+    #endif
 }

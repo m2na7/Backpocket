@@ -490,6 +490,7 @@ final class Favicons {
     nonisolated static var cacheDirectory: URL {
         #if DEBUG
         if let override = FaviconCacheOverride.directory { return override }
+        if let path = DebugLaunch.faviconCachePath { return URL(fileURLWithPath: path) }
         #endif
         return URL.applicationSupportDirectory.appending(path: "Backpocket/Favicons")
     }
