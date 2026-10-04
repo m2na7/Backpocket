@@ -20,6 +20,7 @@ import Foundation
 ///     Backpocket --favicons=/tmp/icons  keep favicons in a cache of the capture's own
 ///     Backpocket --demo-lang=ko         seed the Korean demo content instead
 ///     Backpocket --note=text            add a note after seeding, as if just saved
+///     Backpocket --adopt=text           drop the clip with this text on the notes column
 ///     Backpocket --pane=notes           focus a pane: clips, links or notes
 ///     Backpocket --select=N             select row N of that pane, so its card appears
 ///     Backpocket --shortcuts            show the numbers holding ⌘ shows
@@ -56,6 +57,9 @@ enum DebugLaunch {
     /// Added after the demo seed, so it tops the notes column the way a note
     /// just saved from the field does.
     static var extraNote: String? { value(for: "--note") }
+    /// What a drop on the notes column does to the clip carrying this text:
+    /// the state the panel is in right after a drag-to-note.
+    static var adoptText: String? { value(for: "--adopt") }
     static var pane: String? { value(for: "--pane") }
     /// Selected as the keyboard would select it, which is what lets the
     /// detail card grow against the row after the usual dwell.

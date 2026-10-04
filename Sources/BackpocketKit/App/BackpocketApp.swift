@@ -325,6 +325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let note = DebugLaunch.extraNote {
             store?.addNote(note)
         }
+        if let text = DebugLaunch.adoptText {
+            store?.adoptAsNote(text)
+        }
 
         // --snapshot= implies a panel to capture. Without this it fell under
         // the guard and the process sat there forever, having written no PNG
