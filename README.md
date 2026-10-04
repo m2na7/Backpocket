@@ -37,6 +37,10 @@ Some things are worth keeping even when you don't have time to organize them. Pu
     <td><h3>Search it, or save it as a note.</h3><p>Type something that matches nothing and press <kbd>Enter</kbd>. It lands at the top of your notes.</p></td>
   </tr>
   <tr>
+    <td width="64%"><img src="docs/assets/shot-en-08-drag.webp" alt="Drag a clip to keep it as a note."></td>
+    <td><h3>Drag a clip to keep it as a note.</h3><p>Drop any clip on the notes column and it becomes a note. Text dragged in from another app works too.</p></td>
+  </tr>
+  <tr>
     <td width="64%"><img src="docs/assets/shot-en-03-preview.webp" alt="See it before you paste it."></td>
     <td><h3>See it before you paste it.</h3><p>Pause on a row and a card shows it in full: code in color, links and images.</p></td>
   </tr>
