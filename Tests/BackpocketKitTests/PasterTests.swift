@@ -14,6 +14,13 @@ import Testing
 /// sides would show.
 @MainActor
 @Suite struct PasterTests {
+    @Test func delayedPasteRequiresTheChosenAppAndClipboardGeneration() {
+        let request = AutomaticPasteRequest(processID: 42, changeCount: 100)
+        #expect(request.matches(processID: 42, changeCount: 100))
+        #expect(!request.matches(processID: 43, changeCount: 100))
+        #expect(!request.matches(processID: nil, changeCount: 100))
+        #expect(!request.matches(processID: 42, changeCount: 101))
+    }
     /// Decoded, not just sniffed: a rendition has to be the same picture.
     private func pixelSize(of data: Data) throws -> [Int] {
         let rep = try #require(NSBitmapImageRep(data: data))

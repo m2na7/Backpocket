@@ -17,6 +17,16 @@ enum Persistence {
     /// normal, records all day, and loses everything at quit.
     @MainActor private(set) static var isUsingFallbackStore = false
 
+    /// Kept until acknowledged, including across launches of the replacement store.
+    @MainActor static var recoveryDirectory: URL? {
+        guard let path = resetDefaults.string(forKey: recoveryDirectoryKey) else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    @MainActor static func acknowledgeRecovery() {
+        resetDefaults.removeObject(forKey: recoveryDirectoryKey)
+    }
+
     #if DEBUG
     /// The fallback path only happens when the on-disk store cannot be
     /// opened, which a test cannot arrange without breaking the real store.
@@ -42,6 +52,15 @@ enum Persistence {
     /// running in parallel with another cannot see — or clear — the flag a
     /// different test is relying on. Same reasoning as `PreferenceStore`.
     @TaskLocal private static var isThrowawayStore = false
+
+    @TaskLocal private static var backupMoveOverride: (@Sendable (URL, URL) throws -> Void)?
+
+    static func withBackupMoveForTesting<R>(
+        _ move: @escaping @Sendable (URL, URL) throws -> Void,
+        _ body: () throws -> R
+    ) rethrows -> R {
+        try $backupMoveOverride.withValue(move, operation: body)
+    }
 
     /// Throwaway defaults for the one-attempt guard, so a test can drive the
     /// guard itself instead of the app's real bookkeeping.
@@ -177,30 +196,66 @@ enum Persistence {
         // Stamped, not just versioned: two resets can share a target version,
         // and a name that collides would overwrite the only copy of the
         // earlier notes.
-        let stamp = Int(Date().timeIntervalSince1970)
+        let stamp = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString)"
         // percentEncoded: false, or "Application Support" comes back as
         // "Application%20Support" and every move silently misses.
         let path = url.path(percentEncoded: false)
-
-        for suffix in ["", "-shm", "-wal"] {
-            let sidecar = URL(fileURLWithPath: path + suffix)
-            let backup = URL(fileURLWithPath: path + suffix + ".v\(schemaVersion)-\(stamp).bak")
-            try? FileManager.default.moveItem(at: sidecar, to: backup)
-        }
 
         // The externalStorage attributes (RTF, images, thumbnails) live in a
         // sibling directory; leaving it behind makes the backup unopenable
         // and orphans the blobs forever.
         let support = url.deletingLastPathComponent()
             .appending(path: "." + url.deletingPathExtension().lastPathComponent + "_SUPPORT")
-        try? FileManager.default.moveItem(
-            at: support,
-            to: URL(
-                fileURLWithPath: support.path(percentEncoded: false)
-                    + ".v\(schemaVersion)-\(stamp).bak")
-        )
-
+        let originals =
+            ["", "-shm", "-wal"].map { URL(fileURLWithPath: path + $0) }
+            + [support]
+        var moved: [(original: URL, backup: URL)] = []
+        do {
+            for original in originals {
+                guard FileManager.default.fileExists(atPath: original.path(percentEncoded: false))
+                else { continue }
+                let backup = URL(
+                    fileURLWithPath: original.path(percentEncoded: false)
+                        + ".v\(schemaVersion)-\(stamp).bak")
+                try moveForBackup(original, to: backup)
+                moved.append((original, backup))
+            }
+        } catch {
+            // A partial backup cannot safely seed a new store: restore the
+            // moved pieces and leave the app in memory if any move failed.
+            logger.error("store backup failed: \(error, privacy: .public)")
+            for entry in moved.reversed() {
+                do {
+                    try FileManager.default.moveItem(at: entry.backup, to: entry.original)
+                } catch {
+                    logger.error("backup rollback failed: \(error, privacy: .public)")
+                }
+            }
+            if !moved.isEmpty { recordRecovery(in: url.deletingLastPathComponent()) }
+            return false
+        }
+        if !moved.isEmpty { recordRecovery(in: url.deletingLastPathComponent()) }
         return !FileManager.default.fileExists(atPath: path)
+    }
+
+    private static func moveForBackup(_ original: URL, to backup: URL) throws {
+        #if DEBUG
+        if let backupMoveOverride {
+            try backupMoveOverride(original, backup)
+            return
+        }
+        #endif
+        try FileManager.default.moveItem(at: original, to: backup)
+    }
+
+    @MainActor private static func recordRecovery(in directory: URL) {
+        #if DEBUG
+        // A fixture must never leave a recovery notice in the developer's app.
+        if resetDefaultsOverride == nil, DebugLaunch.storePath != nil || isThrowawayStore {
+            return
+        }
+        #endif
+        resetDefaults.set(directory.path(percentEncoded: false), forKey: recoveryDirectoryKey)
     }
 
     /// Whether this launch owns the one reset attempt for `schemaVersion`.
@@ -223,4 +278,5 @@ enum Persistence {
     }
 
     private static let schemaResetKey = "schemaResetAttempt"
+    private static let recoveryDirectoryKey = "storeRecoveryDirectory"
 }

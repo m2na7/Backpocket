@@ -136,10 +136,23 @@ enum Paster {
     private static let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
 
     private static func sendCommandVIfAutomatic() {
-        guard PasteBehavior.isAutomatic else { return }
+        guard PasteBehavior.isAutomatic, isTrusted,
+            let target = NSWorkspace.shared.frontmostApplication,
+            target.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else { return }
+        let request = AutomaticPasteRequest(
+            processID: target.processIdentifier, changeCount: NSPasteboard.general.changeCount)
 
         // The previous app needs a beat to become active again.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            // Focus, clipboard contents and preferences may all change during
+            // this delay. Leave the copy available for a manual paste instead
+            // of sending a command to a different app or pasting a newer copy.
+            guard PasteBehavior.isAutomatic, isTrusted,
+                request.matches(
+                    processID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                    changeCount: NSPasteboard.general.changeCount)
+            else { return }
             sendCommandV()
         }
     }
@@ -158,6 +171,16 @@ enum Paster {
         up?.flags = .maskCommand
         down?.post(tap: .cgAnnotatedSessionEventTap)
         up?.post(tap: .cgAnnotatedSessionEventTap)
+    }
+}
+
+/// Identifies the app and clipboard generation the user chose for a delayed paste.
+struct AutomaticPasteRequest: Sendable {
+    let processID: Int32
+    let changeCount: Int
+
+    func matches(processID: Int32?, changeCount: Int) -> Bool {
+        processID == self.processID && changeCount == self.changeCount
     }
 }
 

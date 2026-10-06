@@ -611,6 +611,22 @@ struct DataPane: View {
     let hotKeyControl: HotKeyControl
 
     @State private var pendingWipe: WipeAction?
+    @State private var transferNotice: TransferNotice?
+    @State private var isImporting = false
+
+    enum TransferNotice {
+        case exportFailure(String)
+        case importFailure(String)
+        case imported(NoteImportResult)
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .exportFailure: "export.failed"
+            case .importFailure: "import.failed"
+            case .imported: "import.complete"
+            }
+        }
+    }
 
     enum WipeAction: String, Identifiable {
         case history
@@ -634,20 +650,29 @@ struct DataPane: View {
     var body: some View {
         Form {
             Section {
+                Button("export.notes") { exportNotes() }
+                    .disabled(noteCount == 0)
+                Button("import.notes") { importNotes() }
+                    .disabled(store.isUsingTemporaryStorage)
+                if isImporting {
+                    ProgressView("import.inProgress")
+                        .controlSize(.small)
+                }
+            } footer: {
+                Text("export.notesHint")
+            }
+
+            if store.hasStorageFailure || store.recoveryDirectory != nil {
+                Section {
+                    StorageStatusView(store: store)
+                }
+            }
+
+            Section {
                 wipeRow("settings.clearHistory", count: historyCount, action: .history)
                 wipeRow("settings.clearNotes", count: noteCount, action: .notes)
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("settings.clearHistory.note")
-                    // These actions promise the deletion cannot be undone;
-                    // when the store cannot write, what they promise did not
-                    // reach the disk either.
-                    if store.hasStorageFailure {
-                        Text("settings.storageError")
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text("settings.clearHistory.note")
             }
 
             Section {
@@ -663,6 +688,7 @@ struct DataPane: View {
         }
         .formStyle(.grouped)
         .frame(width: paneWidth)
+        .disabled(isImporting)
         .confirmationDialog(
             pendingWipe?.labelKey ?? "",
             isPresented: .init(
@@ -675,6 +701,46 @@ struct DataPane: View {
             Button(action.labelKey, role: .destructive) { perform(action) }
         } message: { _ in
             Text("confirm.cannotUndo")
+        }
+        .alert(
+            transferNotice?.title ?? "export.failed",
+            isPresented: .init(
+                get: { transferNotice != nil },
+                set: { if !$0 { transferNotice = nil } }
+            ),
+            presenting: transferNotice
+        ) {
+            _ in
+            Button("export.ok", role: .cancel) { transferNotice = nil }
+        } message: { notice in
+            switch notice {
+            case .exportFailure(let message), .importFailure(let message):
+                Text(message)
+            case .imported(let result):
+                Text("import.result \(result.imported) \(result.skipped)")
+            }
+        }
+    }
+
+    private func exportNotes() {
+        do {
+            _ = try NoteTransfer.exportNotes(from: store)
+        } catch {
+            transferNotice = .exportFailure(error.localizedDescription)
+        }
+    }
+
+    private func importNotes() {
+        isImporting = true
+        Task {
+            defer { isImporting = false }
+            do {
+                if let result = try await NoteTransfer.importNotes(into: store) {
+                    transferNotice = .imported(result)
+                }
+            } catch {
+                transferNotice = .importFailure(error.localizedDescription)
+            }
         }
     }
 

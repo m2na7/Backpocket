@@ -62,7 +62,10 @@ areas are security reports even when they look like ordinary bugs:
   and auto-generated markers) — leaking a password manager entry is the worst
   case.
 - Clipboard content escaping the SwiftData store — written to logs, temp files,
-  or anywhere else on disk.
+  or anywhere else on disk. The explicit Settings > Data > Export notes action
+  writes only notes and their dates and pin state to the destination the user
+  chooses; it does not export clipboard history. Last-resort recovery backups
+  remain beside the original store and are surfaced to the user.
 - The per-app ignore list failing to suppress capture.
 - The synthesized Cmd+V path (accessibility permission) pasting into a target
   the user didn't pick.

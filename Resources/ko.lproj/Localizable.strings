@@ -91,6 +91,24 @@
 "settings.resetAll.note" = "모든 항목을 지우고 설정을 처음 상태로 되돌립니다.";
 "confirm.cannotUndo" = "이 동작은 되돌릴 수 없습니다.";
 "settings.storageError" = "일부 변경 사항을 디스크에 저장하지 못했습니다. 여기 보이는 내용이 실제 저장된 내용과 다를 수 있습니다.";
+"storage.temporary" = "기록과 메모가 이번 실행 동안에만 보관되며 앱을 종료하면 사라집니다. 종료하기 전에 메모를 내보내세요.";
+"storage.recovered" = "이전 기록과 메모를 열지 못했습니다. 데이터 폴더에 복구용 파일이 남아 있을 수 있으니 삭제하기 전에 확인하세요.";
+"storage.showBackups" = "데이터 폴더 열기";
+"storage.dismissRecovery" = "안내 닫기";
+"export.notes" = "메모 내보내기…";
+"export.notesHint" = "App Store판으로 옮기려면 무료판에서 메모를 내보내고 종료한 뒤, App Store판에서 그 JSON 파일을 가져오세요. 메모·날짜·고정 상태가 복원됩니다. 기존 메모는 유지하며 일치하는 메모는 건너뜁니다. 클립보드 기록은 포함하지 않습니다.";
+"export.failed" = "메모를 내보내지 못했습니다";
+"export.ok" = "확인";
+"import.notes" = "메모 가져오기…";
+"import.inProgress" = "메모를 가져오는 중…";
+"import.failed" = "메모를 가져오지 못했습니다";
+"import.complete" = "메모 가져오기 완료";
+"import.result %lld %lld" = "메모 %lld개를 가져왔습니다. 일치하는 메모 %lld개는 건너뛰었습니다. 기존 메모는 유지했습니다.";
+"import.invalidFile" = "올바른 Backpocket 메모 파일이 아닙니다. Backpocket에서 내보낸 JSON 파일을 선택하세요.";
+"import.unsupportedVersion" = "다른 버전의 백업 형식입니다. Backpocket을 업데이트한 뒤 가져오세요.";
+"import.tooLarge" = "메모 이관 파일은 256MB 이하여야 합니다.";
+"import.temporaryStorage" = "임시 저장 상태에서는 메모를 가져올 수 없습니다. 백업 파일은 그대로 유지됩니다. 저장소가 정상화되면 앱을 다시 열고 시도하세요.";
+"import.storageFailure" = "메모를 저장하지 못해 가져온 메모를 추가하지 않았습니다. 백업 파일은 그대로 유지됩니다. 저장소가 정상화되면 다시 시도하세요.";
 
 "edit.save" = "저장";
 "edit.saveAndPaste" = "저장하고 붙여넣기";
@@ -142,4 +160,3 @@
 "a11y.hint.edit" = "이 메모를 편집합니다";
 "a11y.noteText" = "메모 내용";
 "a11y.characters %lld" = "%lld자";
-

@@ -241,6 +241,51 @@ struct MigrationTests {
                 == Data("not a database".utf8))
     }
 
+    @Test func recoveryNoticeSurvivesReopeningUntilAcknowledged() throws {
+        try withResetDefaults { _ in
+            let directory = try TempDirectory()
+            try writeUnreadableStore(at: directory.storeURL)
+            let (container, usedFallback) = Persistence.makeContainerForTesting(
+                at: directory.storeURL)
+            #expect(!usedFallback)
+            #expect(Persistence.recoveryDirectory?.path == directory.url.path)
+
+            _ = Persistence.makeContainerForTesting(at: directory.storeURL)
+            let store = Store(context: ModelContext(container))
+            #expect(store.recoveryDirectory?.path == directory.url.path)
+            store.acknowledgeRecovery()
+            #expect(store.recoveryDirectory == nil)
+            #expect(Persistence.recoveryDirectory == nil)
+            #expect(!directory.backupNames().isEmpty)
+        }
+    }
+
+    @Test func aFailedBlobBackupRestoresTheDatabaseAndFallsBackToMemory() throws {
+        let directory = try TempDirectory()
+        try writeUnreadableStore(at: directory.storeURL)
+        let support = directory.url.appending(path: ".Backpocket_SUPPORT")
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let blob = support.appending(path: "note-image")
+        let bytes = Data("irreplaceable blob".utf8)
+        try bytes.write(to: blob)
+
+        let (_, usedFallback) = try Persistence.withBackupMoveForTesting(
+            { original, backup in
+                if original.lastPathComponent == ".Backpocket_SUPPORT" {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+                try FileManager.default.moveItem(at: original, to: backup)
+            }
+        ) {
+            Persistence.makeContainerForTesting(at: directory.storeURL)
+        }
+
+        #expect(usedFallback)
+        #expect(try Data(contentsOf: directory.storeURL) == Data("not a database".utf8))
+        #expect(try Data(contentsOf: blob) == bytes)
+        #expect(directory.backupNames().isEmpty)
+    }
+
     /// Throwaway defaults, so the one-attempt guard can be driven without
     /// touching the bookkeeping the running app relies on.
     ///
@@ -271,6 +316,7 @@ struct MigrationTests {
     @Test func aThrowawayStoreNeverConsumesTheRealResetAttempt() throws {
         let key = "schemaResetAttempt"
         let before = UserDefaults.standard.object(forKey: key) as? Int
+        let recoveryBefore = UserDefaults.standard.string(forKey: "storeRecoveryDirectory")
 
         let directory = try TempDirectory()
         try writeUnreadableStore(at: directory.storeURL)
@@ -279,6 +325,7 @@ struct MigrationTests {
         _ = Persistence.makeContainerForTesting(at: directory.storeURL)
 
         #expect(UserDefaults.standard.object(forKey: key) as? Int == before)
+        #expect(UserDefaults.standard.string(forKey: "storeRecoveryDirectory") == recoveryBefore)
     }
 
     @Test func theResetIsAttemptedOnlyOncePerVersion() throws {

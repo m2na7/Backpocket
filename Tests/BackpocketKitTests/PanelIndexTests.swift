@@ -35,16 +35,10 @@ import Testing
 
     // MARK: Same lists
 
-    /// Every search goes through the head of the text only, and the index
-    /// cuts that head once instead of on every keystroke — skipping the cut
-    /// altogether when the text is too short to need one. The shortcut is
-    /// counted in UTF-16 units and the cut in characters, so the texts here
-    /// sit at, just under and just over the cap in both, built from what
-    /// makes the two counts disagree: emoji, an accent that is its own
-    /// scalar, and Hangul spelled out as jamo. The needle at the end of each
-    /// is either the last thing inside the cap or the first thing outside.
-    @Test func theSearchFindsExactlyWhatItDidBeforeTheIndex() throws {
-        let cap = PanelIndex.searchCap
+    /// A phrase after the old 10,000-character cutoff must remain findable,
+    /// including in notes and text containing multi-scalar characters.
+    @Test func searchFindsTextBeyondTheFormerCutoff() throws {
+        let cap = 10_000
         let needle = "needle"
         let fillers = [
             "a",  // one unit, one character: the shortcut's own boundary
@@ -62,12 +56,13 @@ import Testing
         }
         let items = try storeOrdered()
 
-        for item in items {
-            #expect(PanelIndex.haystack(item.content) == String(item.content.prefix(cap)))
+        let index = PanelIndex(items: items)
+        for query in ["needle", "NEEDLE", "le"] {
+            let lists = PanelContents.make(index: index, query: query, links: .keep)
+            #expect(lists.clips.count == 24)
+            #expect(lists.notes.count == 12)
         }
-        expectSameLists(
-            items: items, links: [.keep],
-            queries: ["", "needle", "NEEDLE", "le", "😀", "é", "e\u{301}", "한", "zzz"])
+        #expect(PanelContents.make(index: index, query: "zzz", links: .keep).clips.isEmpty)
     }
 
     /// Which pane a row lands in, under each of the three ways of collecting

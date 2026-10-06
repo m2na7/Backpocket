@@ -91,6 +91,24 @@
 "settings.resetAll.note" = "删除所有条目，并将设置恢复为默认。";
 "confirm.cannotUndo" = "此操作无法撤销。";
 "settings.storageError" = "部分更改未能写入磁盘，这里显示的内容可能与实际保存的不一致。";
+"storage.temporary" = "历史记录和笔记仅在本次运行期间保留，退出应用后将丢失。请在退出前导出笔记。";
+"storage.recovered" = "无法打开之前的历史记录和笔记。数据文件夹中可能保留了恢复文件，请在删除前检查。";
+"storage.showBackups" = "打开数据文件夹";
+"storage.dismissRecovery" = "关闭提示";
+"export.notes" = "导出笔记…";
+"export.notesHint" = "迁移到App Store版时，请先在免费版中导出笔记并退出，再在App Store版中导入该JSON文件。笔记、日期和置顶状态将被恢复。现有笔记会保留，匹配的笔记会跳过。不包含剪贴板历史记录。";
+"export.failed" = "无法导出笔记";
+"export.ok" = "确定";
+"import.notes" = "导入笔记…";
+"import.inProgress" = "正在导入笔记…";
+"import.failed" = "无法导入笔记";
+"import.complete" = "笔记导入完成";
+"import.result %lld %lld" = "已导入%lld条笔记，跳过%lld条匹配的笔记。现有笔记已保留。";
+"import.invalidFile" = "这不是有效的Backpocket笔记文件。请选择从Backpocket导出的JSON文件。";
+"import.unsupportedVersion" = "此文件使用不同版本的备份格式。请更新Backpocket后再导入。";
+"import.tooLarge" = "笔记迁移文件不能超过256MB。";
+"import.temporaryStorage" = "临时存储状态下无法导入笔记。备份文件不会被更改。存储恢复后，请重新打开应用再试。";
+"import.storageFailure" = "无法保存笔记，因此未添加导入的笔记。备份文件未被更改，请在存储恢复后重试。";
 
 "edit.save" = "保存";
 "edit.saveAndPaste" = "保存并粘贴";
@@ -142,4 +160,3 @@
 "a11y.hint.edit" = "编辑此笔记";
 "a11y.noteText" = "笔记内容";
 "a11y.characters %lld" = "%lld 个字符";
-

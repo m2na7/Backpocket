@@ -648,6 +648,17 @@ struct StoreTests: InMemoryStoreSuite {
         #expect(fallback.hasStorageFailure)
     }
 
+    @Test func importingIntoTemporaryStorageIsRefusedBeforeAddingNotes() throws {
+        Persistence.setUsingFallbackStoreForTesting(true)
+        defer { Persistence.setUsingFallbackStoreForTesting(false) }
+        let fallback = Store(context: ModelContext(container))
+        let archive = NoteExport(items: [Item(content: "must survive", isNote: true)])
+        #expect(throws: NoteTransferError.temporaryStorage) {
+            _ = try fallback.importNotes(archive)
+        }
+        #expect(fallback.items.isEmpty)
+    }
+
     @Test func aSuccessfulWriteCannotClearAFallbackStoreFailure() throws {
         Persistence.setUsingFallbackStoreForTesting(true)
         defer { Persistence.setUsingFallbackStoreForTesting(false) }
@@ -747,6 +758,22 @@ struct StoreTests: InMemoryStoreSuite {
             #expect(failing.items.map(\.content) == rows)
             #expect(failing.items.first === clip)
             #expect(clip.content == "before")
+        }
+    }
+
+    @Test func anImportThatFailsToSaveAddsNoPartialNotes() throws {
+        try withFailingStore(seed: { $0.addNote("keep me") }) { failing, persisted in
+            let archive = NoteExport(items: [
+                Item(content: "first imported", isNote: true),
+                Item(content: "second imported", isNote: true),
+            ])
+            #expect(throws: NoteTransferError.storageFailure) {
+                _ = try failing.importNotes(archive)
+            }
+            #expect(failing.hasStorageFailure)
+            #expect(failing.items.map(\.content) == ["keep me"])
+            let rows = try persisted()
+            #expect(rows == ["keep me"])
         }
     }
 

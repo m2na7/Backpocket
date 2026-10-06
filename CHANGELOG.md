@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - `Cmd+N` turns the selected clip into a note and selects it, so a clip can be kept, edited with `Enter` and pasted with `Cmd+Enter` without the mouse. Like the other item shortcuts it can be rebound in Settings > Shortcuts, which now also accepts arrow keys held with two of `Cmd`, `Option` and `Control` (such as `Option+Cmd+→`). ([#2](https://github.com/m2na7/Backpocket/issues/2))
+- Export and import notes as JSON from Settings > Data, including dates and pin state, to move notes from the free version to the App Store version. Imports keep existing notes, skip matches on repeated transfers, and save the entire batch together. Clipboard history is excluded.
+- Storage and recovery notices in the panel and Settings, with an action to open the data folder. Recovery notices remain until dismissed, including after reopening the app.
+
+### Fixed
+
+- Search finds text beyond the first 10,000 characters of a stored clip or note.
+- A failed recovery backup rolls back completed file moves instead of opening a new store alongside a partial backup.
+- Delayed automatic pastes are cancelled if the target app or clipboard contents change.
+- Transfer test apps no longer register the global shortcut when launched normally, and the runner terminates leftover test processes.
+- Notes imported from a Mac with a clock ahead of this one remain correctly ordered after later edits and additions.
 
 ## [0.1.6] - 2026-09-29
 

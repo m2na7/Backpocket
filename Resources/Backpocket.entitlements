@@ -13,13 +13,13 @@
 	<key>com.apple.security.network.client</key>
 	<true/>
 
-	<!-- Settings > Ignored apps runs an NSOpenPanel over /Applications and
-	     reads each chosen bundle's Info.plist for its identifier. Read-only is
-	     enough: nothing is ever written back to a user-selected location.
+	<!-- Settings > Ignored apps reads chosen application bundles, and
+	     Settings > Data exports notes to a destination chosen with NSSavePanel.
+	     Read/write access is limited to locations the user explicitly selects.
 	     NOTE: this does NOT cover the file-copy feature. Files copied in
 	     Finder never pass through a panel, so no user-selected grant reaches
 	     them: a stored file pastes back as its path, silently. -->
-	<key>com.apple.security.files.user-selected.read-only</key>
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 </dict>
 </plist>

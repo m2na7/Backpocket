@@ -28,6 +28,9 @@ import Foundation
 ///     Backpocket --snapshot-scale=3     with --snapshot-dir, render at 3 pixels per point
 ///     Backpocket --snapshot-dir=/tmp/x  render every open window to x, with frames
 enum DebugLaunch {
+    static var transferProbe: String? { value(for: "--transfer-probe") }
+    static var transferRun: String? { value(for: "--transfer-run") }
+    static var transferFile: String? { value(for: "--transfer-file") }
     static var openPanel: Bool { has("--open") }
     static var openEditor: Bool { has("--edit") }
     static var openSettings: Bool { has("--settings") }

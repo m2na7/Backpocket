@@ -1,4 +1,4 @@
-.PHONY: all build test build-mas test-mas coverage mutants race format icon app run clean lint lint-strings
+.PHONY: all build test build-mas test-mas test-sandbox-transfer coverage mutants race format icon app run clean lint lint-strings
 
 all: build
 
@@ -17,6 +17,10 @@ build-mas:
 
 test-mas:
 	BACKPOCKET_MAS=1 swift test --scratch-path .build/mas
+
+# Real signed bundles and native file panels; needs a macOS desktop and Orca.
+test-sandbox-transfer:
+	python3 scripts/test-sandbox-transfer.py
 
 # Line coverage per file, worst first. Reported, never gated — see the script.
 coverage:
