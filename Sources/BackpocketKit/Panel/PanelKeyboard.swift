@@ -96,6 +96,9 @@ enum PanelCommand: Equatable {
     case edit
     case togglePin
     case openLink
+    /// Turns the selected clip into a note, as dropping it on the notes
+    /// column does.
+    case convertToNote
     /// The panel owns this key but has nothing to do with it. Distinct from
     /// `unhandled`: swallowing ⌘↩ with an empty panel is correct, letting the
     /// text field see it is not.
@@ -114,6 +117,15 @@ enum PanelCommand: Equatable {
 /// hints ask too, and only the dispatcher cares about the rest of the keys.
 enum PanelKeyboard {
     static func command(for press: PanelKeyPress, in context: PanelKeyContext) -> PanelCommand {
+        // A shortcut rebound onto ↑ or ↓ outranks the list move, or it could
+        // never fire. Only a fresh press carries one: `PanelKeyPress` drops
+        // it on repeat, so holding the keys still walks the list.
+        if press.key == .upArrow || press.key == .downArrow, !press.isRepeat,
+            let shortcut = press.shortcut
+        {
+            return command(for: shortcut, in: context)
+        }
+
         // Ahead of the repeat guard: holding an arrow is how the list is meant
         // to be walked.
         switch press.key {
@@ -147,25 +159,7 @@ enum PanelKeyboard {
         // anything, but a shortcut carrying an extra modifier still gets
         // first refusal.
         if let shortcut = press.shortcut {
-            switch shortcut {
-            case .edit: return .edit
-            case .pin: return .togglePin
-            case .delete:
-                // A collected handful is a transient mode and owns the key
-                // while it exists.
-                guard context.stackIsEmpty else { return .deleteStack }
-                // Otherwise ⌘⌫ is the field's: it is how macOS clears the
-                // line you are typing on, this field is always focused, and
-                // Escape closes the panel rather than emptying it — so
-                // claiming the key leaves a typed query with no way out but
-                // holding backspace, and destroys a clip on the way.
-                if context.hasQuery, context.deleteIsCommandBackspace {
-                    return .unhandled
-                }
-                return .deleteSelection
-            case .stack: return .toggleStack
-            case .openLink: return .openLink
-            }
+            return command(for: shortcut, in: context)
         }
 
         if press.command, case .character(let character) = press.key {
@@ -187,6 +181,39 @@ enum PanelKeyboard {
         }
 
         return .unhandled
+    }
+
+    /// What a rebindable shortcut does in this context.
+    private static func command(for shortcut: PanelShortcut, in context: PanelKeyContext)
+        -> PanelCommand
+    {
+        switch shortcut {
+        case .edit: return .edit
+        case .pin: return .togglePin
+        case .delete:
+            // A collected handful is a transient mode and owns the key
+            // while it exists.
+            guard context.stackIsEmpty else { return .deleteStack }
+            // Otherwise ⌘⌫ is the field's: it is how macOS clears the
+            // line you are typing on, this field is always focused, and
+            // Escape closes the panel rather than emptying it — so
+            // claiming the key leaves a typed query with no way out but
+            // holding backspace, and destroys a clip on the way.
+            if context.hasQuery, context.deleteIsCommandBackspace {
+                return .unhandled
+            }
+            return .deleteSelection
+        case .stack: return .toggleStack
+        case .openLink: return .openLink
+        case .toNote:
+            // A clip to convert, and a notes column for it to land in.
+            // Claimed either way: the key is the panel's, and a note
+            // selected in the notes pane is already one.
+            guard context.pane != .notes, context.hasSelection, context.showsNotes else {
+                return .consumed
+            }
+            return .convertToNote
+        }
     }
 
     /// ⌘Z by the letter it types, or by the key it sits on when the input

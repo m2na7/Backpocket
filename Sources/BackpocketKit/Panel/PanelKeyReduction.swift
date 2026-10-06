@@ -13,10 +13,12 @@ extension PanelKeyPress {
     /// The shortcut arrives as a closure rather than as a value because
     /// matching one reads the live NSEvent and then every binding out of
     /// preferences, while a character key repeating in the search field is
-    /// the most latency-sensitive path the panel has. The named keys never
-    /// reach a shortcut (a binding is built from an ANSI key name or
-    /// "delete", so it can never be ⇥, esc, ↩ or an arrow) and a repeat's is
-    /// discarded by the dispatcher anyway, so neither pays for the lookup.
+    /// the most latency-sensitive path the panel has. ⇥, esc and ↩ never
+    /// reach a shortcut (no binding can name them), ↑ and ↓ only when held
+    /// with ⌘, ⌥ or ⌃ (a bare arrow walks the list, and no binding is bare),
+    /// and a repeat's is discarded by the dispatcher anyway, so none of those
+    /// pay for the lookup. ← and → arrive as characters and are looked up
+    /// like any other key.
     ///
     /// `physicalKey` is a closure for the same reason, and is asked even
     /// less often: only for a press with ⌘ alone that types a letter from a
@@ -38,10 +40,14 @@ extension PanelKeyPress {
         let reduced: Key
         var matched: PanelShortcut?
         var physical: String?
+        let canBeShortcut =
+            !isRepeat && !modifiers.intersection([.command, .option, .control]).isEmpty
         if key == .upArrow {
             reduced = .upArrow
+            matched = canBeShortcut ? matchingShortcut() : nil
         } else if key == .downArrow {
             reduced = .downArrow
+            matched = canBeShortcut ? matchingShortcut() : nil
         } else if key == .tab {
             reduced = .tab
         } else if key == .escape {

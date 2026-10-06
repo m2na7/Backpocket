@@ -101,6 +101,7 @@ brew install --cask m2na7/backpocket/backpocket
 | <kbd>Cmd+O</kbd> | 선택한 링크 열기 |
 | <kbd>Cmd+P</kbd> | 고정 / 해제 |
 | <kbd>Cmd+E</kbd> | 메모 편집 |
+| <kbd>Cmd+N</kbd> | 선택한 클립을 메모로 전환 |
 | <kbd>Cmd+Backspace</kbd> | 삭제 |
 | <kbd>Cmd+,</kbd> | 설정 |
 | <kbd>Esc</kbd> | 닫기 |

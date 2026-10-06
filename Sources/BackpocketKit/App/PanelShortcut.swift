@@ -5,7 +5,8 @@ import SwiftUI
 /// One stored key combination: a layout-independent ANSI key name plus the
 /// real modifier flags.
 struct KeyBinding: Equatable {
-    /// "e", "8", "[" — or the special "delete". Never a layout glyph.
+    /// "e", "8", "[" — or one of the special names "delete", "left",
+    /// "right", "up" and "down". Never a layout glyph.
     var key: String
     /// Raw NSEvent.ModifierFlags, masked to the four real modifiers.
     var modifiers: UInt
@@ -27,16 +28,26 @@ struct KeyBinding: Equatable {
         let flags = event.modifierFlags.intersection(Self.realModifiers)
         guard !flags.intersection([.command, .control, .option]).isEmpty else { return nil }
 
-        let code = Int(event.keyCode)
-        if code == kVK_Delete {
-            key = "delete"
-        } else if let name = HotKeyBinding.ansiName(for: code) {
-            key = name.lowercased()
-        } else {
-            return nil
-        }
+        guard let name = Self.keyName(for: Int(event.keyCode)) else { return nil }
+        key = name
         modifiers = flags.rawValue
     }
+
+    /// The arrows by key code, under the names a binding stores them as.
+    static let arrowNames: [Int: String] = [
+        kVK_LeftArrow: "left", kVK_RightArrow: "right", kVK_UpArrow: "up", kVK_DownArrow: "down",
+    ]
+
+    /// A physical key named the way a binding names it — "delete", an
+    /// arrow, or the lowercased ANSI key name — or nil for a key no panel
+    /// shortcut may use.
+    static func keyName(for keyCode: Int) -> String? {
+        if keyCode == kVK_Delete { return "delete" }
+        if let arrow = arrowNames[keyCode] { return arrow }
+        return HotKeyBinding.ansiName(for: keyCode)?.lowercased()
+    }
+
+    var isArrow: Bool { Self.arrowNames.values.contains(key) }
 
     var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(rawValue: modifiers) }
 
@@ -56,7 +67,8 @@ struct KeyBinding: Equatable {
         if flags.contains(.option) { parts += "⌥" }
         if flags.contains(.shift) { parts += "⇧" }
         if flags.contains(.command) { parts += "⌘" }
-        return parts + (key == "delete" ? "⌫" : key.uppercased())
+        let glyphs = ["delete": "⌫", "left": "←", "right": "→", "up": "↑", "down": "↓"]
+        return parts + (glyphs[key] ?? key.uppercased())
     }
 }
 
@@ -69,6 +81,7 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
     case delete
     case stack
     case openLink
+    case toNote
 
     var id: String { rawValue }
 
@@ -79,6 +92,7 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
         case .delete: "ctx.delete"
         case .stack: "hint.stack"
         case .openLink: "ctx.openLink"
+        case .toNote: "ctx.toNote"
         }
     }
 
@@ -89,6 +103,7 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
         case .delete: KeyBinding(key: "delete", modifiers: .command)
         case .stack: KeyBinding(key: "d", modifiers: .command)
         case .openLink: KeyBinding(key: "o", modifiers: .command)
+        case .toNote: KeyBinding(key: "n", modifiers: .command)
         }
     }
 
@@ -125,7 +140,17 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
 
     /// Combinations the panel already owns structurally; the recorder must
     /// refuse them.
+    ///
+    /// An arrow needs two of ⌘ ⌥ ⌃. With one alone it is already spoken for:
+    /// ⌘ and ⌥ move the caret through the search field, which always has
+    /// focus, and ⌃ switches Spaces before the panel hears it. ⇧ only adds
+    /// selection to the first two, so it never counts toward the pair.
     static func isReserved(_ binding: KeyBinding) -> Bool {
+        if binding.isArrow {
+            let held = binding.flags.intersection([.command, .option, .control])
+            return [NSEvent.ModifierFlags.command, .option, .control].filter { held.contains($0) }
+                .count < 2
+        }
         guard binding.eventModifiers == .command, binding.key.count == 1 else { return false }
         return binding.key.first!.isNumber || binding.key == ","
     }
@@ -170,8 +195,8 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
     }
 
     /// The key being pressed right now, named the way a binding names it:
-    /// "delete", or the lowercased ANSI key name. nil when the current event
-    /// is not a key press, or the key has no ANSI name.
+    /// "delete", an arrow, or the lowercased ANSI key name. nil when the
+    /// current event is not a key press, or the key has no such name.
     ///
     /// KeyPress's character follows the active input source — under a
     /// Korean layout the O key arrives as "ㅐ" and every letter shortcut
@@ -180,8 +205,7 @@ enum PanelShortcut: String, CaseIterable, Identifiable {
     @MainActor
     static func physicalKeyName() -> String? {
         guard let event = NSApp.currentEvent, event.type == .keyDown else { return nil }
-        if Int(event.keyCode) == kVK_Delete { return "delete" }
-        return HotKeyBinding.ansiName(for: Int(event.keyCode))?.lowercased()
+        return KeyBinding.keyName(for: Int(event.keyCode))
     }
 
     /// KeyPress has no public initializer, so the matching itself lives here
