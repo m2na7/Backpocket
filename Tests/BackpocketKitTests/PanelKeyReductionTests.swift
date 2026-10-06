@@ -72,15 +72,37 @@ struct PanelKeyReductionTests {
                 })
         }
 
-        // A binding is built from an ANSI key name or "delete", so it can
-        // never be one of these — and the dispatcher's own branches win over
-        // shortcuts anyway.
+        // No binding can name ⇥, esc or ↩, and none is a bare arrow — a
+        // binding needs ⌘, ⌥ or ⌃ — so none of these is worth the lookup.
         for key in [KeyEquivalent.upArrow, .downArrow, .tab, .escape, .return] {
             _ = count(key)
         }
         #expect(lookups == 0)
 
         _ = count("e")
+        #expect(lookups == 1)
+    }
+
+    @Test func anUpOrDownArrowWithAModifierAsksForAShortcut() {
+        var lookups = 0
+        let press = PanelKeyPress(
+            key: .downArrow, isRepeat: false, modifiers: [.option, .command],
+            matchingShortcut: {
+                lookups += 1
+                return .toNote
+            })
+        #expect(press.key == .downArrow)
+        #expect(press.shortcut == .toNote)
+        #expect(lookups == 1)
+
+        // Held, it is a walk down the list, and pays for nothing.
+        let held = PanelKeyPress(
+            key: .downArrow, isRepeat: true, modifiers: [.option, .command],
+            matchingShortcut: {
+                lookups += 1
+                return .toNote
+            })
+        #expect(held.shortcut == nil)
         #expect(lookups == 1)
     }
 

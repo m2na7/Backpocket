@@ -111,6 +111,7 @@ Settings > Data can export all notes, their dates and pin state to a JSON file a
 | <kbd>Cmd+O</kbd> | Open the selected link |
 | <kbd>Cmd+P</kbd> | Pin / unpin |
 | <kbd>Cmd+E</kbd> | Edit note |
+| <kbd>Cmd+N</kbd> | Convert the selected clip to a note |
 | <kbd>Cmd+Backspace</kbd> | Delete |
 | <kbd>Cmd+,</kbd> | Settings |
 | <kbd>Esc</kbd> | Close |

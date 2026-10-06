@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import Testing
 
@@ -15,6 +16,7 @@ struct PanelShortcutTests {
             #expect(PanelShortcut.delete.current.label == "⌘⌫")
             #expect(PanelShortcut.stack.current.label == "⌘D")
             #expect(PanelShortcut.openLink.current.label == "⌘O")
+            #expect(PanelShortcut.toNote.current.label == "⌘N")
         }
     }
 
@@ -37,6 +39,62 @@ struct PanelShortcutTests {
         // With another modifier the combination is fair game.
         #expect(!PanelShortcut.isReserved(KeyBinding(key: "5", modifiers: [.command, .shift])))
         #expect(!PanelShortcut.isReserved(KeyBinding(key: "e", modifiers: .command)))
+    }
+
+    @Test func anArrowNeedsTwoOfCommandOptionAndControl() {
+        // One alone is already spoken for: ⌘ and ⌥ move the caret in the
+        // search field, which always has focus, and ⌃ switches Spaces.
+        for flags: NSEvent.ModifierFlags in [
+            .command, .option, .control, [.command, .shift], [.option, .shift],
+        ] {
+            for arrow in ["left", "right", "up", "down"] {
+                #expect(PanelShortcut.isReserved(KeyBinding(key: arrow, modifiers: flags)))
+            }
+        }
+        #expect(
+            !PanelShortcut.isReserved(KeyBinding(key: "right", modifiers: [.option, .command])))
+        #expect(
+            !PanelShortcut.isReserved(KeyBinding(key: "down", modifiers: [.control, .command])))
+        #expect(
+            !PanelShortcut.isReserved(
+                KeyBinding(key: "left", modifiers: [.control, .option, .shift])))
+    }
+
+    @Test func theArrowsAreNamedAndDrawnLikeTheOtherSpecialKeys() {
+        #expect(KeyBinding.keyName(for: kVK_LeftArrow) == "left")
+        #expect(KeyBinding.keyName(for: kVK_RightArrow) == "right")
+        #expect(KeyBinding.keyName(for: kVK_UpArrow) == "up")
+        #expect(KeyBinding.keyName(for: kVK_DownArrow) == "down")
+        #expect(KeyBinding.keyName(for: kVK_Delete) == "delete")
+        #expect(KeyBinding.keyName(for: kVK_ANSI_N) == "n")
+        #expect(KeyBinding(key: "right", modifiers: [.option, .command]).label == "⌥⌘→")
+        #expect(KeyBinding(key: "up", modifiers: [.control, .command]).label == "⌃⌘↑")
+    }
+
+    @Test func aShortcutReboundOntoAnArrowMatchesThatArrow() throws {
+        try withScratchPreferences { _ in
+            PanelShortcut.toNote.persist(KeyBinding(key: "right", modifiers: [.option, .command]))
+            // The character an arrow types is a private-use code point, so
+            // only the physical key can say which arrow it was.
+            #expect(
+                PanelShortcut.match(
+                    physical: "right", character: "\u{F703}", isDelete: false,
+                    modifiers: [.option, .command])
+                    == .toNote
+            )
+            // ⌘→ alone is still the field's.
+            #expect(
+                PanelShortcut.match(
+                    physical: "right", character: "\u{F703}", isDelete: false, modifiers: .command)
+                    == nil
+            )
+            // And the default it moved off no longer fires.
+            #expect(
+                PanelShortcut.match(
+                    physical: "n", character: "n", isDelete: false, modifiers: .command)
+                    == nil
+            )
+        }
     }
 
     @MainActor

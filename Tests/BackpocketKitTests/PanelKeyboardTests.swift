@@ -180,11 +180,25 @@ struct PanelKeyboardTests {
             )
         }
 
-        @Test func theArrowsOutrankEverythingElseIncludingModifiers() {
+        @Test func theArrowsOutrankEverythingButABoundShortcut() {
             // The arrows are checked before the repeat guard and before any
             // modifier is consulted, so ⌘↓ still moves rather than falling
-            // through to a slot or a shortcut.
+            // through to a slot.
             #expect(tests.command(.downArrow, command: true, shift: true) == .move(1))
+            // Unless a shortcut was rebound onto that arrow: then the press
+            // is the shortcut's, or the binding could never fire.
+            #expect(
+                tests.command(
+                    .downArrow, command: true, shortcut: .toNote,
+                    PanelKeyContext(hasSelection: true))
+                    == .convertToNote
+            )
+        }
+
+        @Test func aHeldArrowWalksEvenWhenAShortcutIsBoundToIt() {
+            // A repeat never fires a shortcut — holding ⌥⌘↓ must not convert
+            // a clip per repeat event — so it falls back to walking.
+            #expect(tests.command(.downArrow, isRepeat: true, shortcut: .toNote) == .move(1))
         }
     }
 
@@ -373,6 +387,23 @@ struct PanelKeyboardTests {
             #expect(tests.command(.character("d"), command: true, shortcut: .stack) == .toggleStack)
             #expect(
                 tests.command(.character("o"), command: true, shortcut: .openLink) == .openLink)
+        }
+
+        @Test func convertingNeedsAClipAndSomewhereForTheNoteToLand() {
+            let convert: (PanelKeyContext) -> PanelCommand = {
+                tests.command(.character("n"), command: true, shortcut: .toNote, $0)
+            }
+            #expect(convert(PanelKeyContext(pane: .clips, hasSelection: true)) == .convertToNote)
+            // A link is a clip.
+            #expect(convert(PanelKeyContext(pane: .links, hasSelection: true)) == .convertToNote)
+            // A note is already one, nothing is selected, or the column is
+            // hidden: the key is still the panel's, so the field does not
+            // get an "n" typed into it.
+            #expect(convert(PanelKeyContext(pane: .notes, hasSelection: true)) == .consumed)
+            #expect(convert(PanelKeyContext(pane: .clips, hasSelection: false)) == .consumed)
+            #expect(
+                convert(PanelKeyContext(pane: .clips, hasSelection: true, showsNotes: false))
+                    == .consumed)
         }
 
         @Test func aMatchedShortcutOutranksASlotOrSettings() {
