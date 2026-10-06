@@ -797,6 +797,7 @@ struct ContentView: View {
         case .saveNote: saveNote()
         case .edit: startEdit()
         case .togglePin: togglePin()
+        case .convertToNote: convertSelectedToNote()
         case .openLink:
             // Pointing at a link and pressing open must open THAT link, card
             // or no card; the keyboard selection is the fallback.
@@ -923,6 +924,21 @@ struct ContentView: View {
     private func togglePin() {
         guard let selectedItem else { return }
         store.togglePin(selectedItem)
+    }
+
+    /// The keyboard's drag onto the notes column: the clip becomes a note in
+    /// place, and the selection follows it there, so ↩ edits it and ⌘↩
+    /// pastes it without reaching for the mouse.
+    private func convertSelectedToNote() {
+        // Notes are text, so an image clip has nothing to become — the
+        // store refuses it too, but the selection must not move either.
+        guard let target = actionTarget, !target.isNote, !target.isImage else { return }
+        store.convertToNote(target)
+        hoverState.dropHighlight()
+        dismissDetail()
+        recomputeLists()
+        selection.focus(.notes, in: contents.rows, origin: .user)
+        selection.select(target.id, in: .notes, origin: .user)
     }
 
     /// Deletes the whole ⌘-collected handful in one write.

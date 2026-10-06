@@ -101,6 +101,7 @@ Or take the zip from [Releases](https://github.com/m2na7/Backpocket/releases/lat
 | <kbd>Cmd+O</kbd> | Open the selected link |
 | <kbd>Cmd+P</kbd> | Pin / unpin |
 | <kbd>Cmd+E</kbd> | Edit note |
+| <kbd>Cmd+N</kbd> | Convert the selected clip to a note |
 | <kbd>Cmd+Backspace</kbd> | Delete |
 | <kbd>Cmd+,</kbd> | Settings |
 | <kbd>Esc</kbd> | Close |
