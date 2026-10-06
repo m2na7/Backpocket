@@ -49,6 +49,14 @@ a bug in this document.
 - `Onboarding` — the single-task screen shown when the accessibility
   permission is missing.
 - `DebugLaunch` — DEBUG-only launch flags (see Testing seams below).
+- `DebugTransferProbe` — isolated app-process checks of the production
+  transfer panels and persisted data, driven by `test-sandbox-transfer.py`.
+  The runner signs separate source and sandbox bundles and checks both a
+  denied read before selection and a successful import afterward. A native
+  Accessibility helper selects file rows and presses panel buttons without
+  keyboard synthesis. Each run gets new bundle identifiers; reserved test
+  identities exit before normal startup without probe flags. Neither
+  the probe nor its launch flags exists in release builds.
 - `DemoSeed` — the DEBUG-only fixture content `--demo` seeds into an empty
   store, kept out of `AppDelegate` since it only calls `Store`'s own API.
 
@@ -64,6 +72,8 @@ a bug in this document.
 - `Paster` — writes the pasteboard (string + rich flavors, or PNG + a TIFF
   rendition for image clips) and synthesizes Cmd+V when automatic pasting is
   on. Automatic pasting is the only thing that needs Accessibility trust.
+  `AutomaticPasteRequest` checks the chosen process and pasteboard generation
+  again after the delay; a changed target or clipboard cancels the command.
 - `PasteFlavor` — which representation of a stored item leaves the app. The
   narrowest and most consequential decision in the codebase, kept as a value
   rather than as branches inside the app delegate so it can be tested: a
@@ -89,6 +99,22 @@ a bug in this document.
   anything held here is content the user asked to destroy.
 - `Persistence` — builds the `ModelContainer` at a dedicated path, carrying an
   older store forward through the migration plan (see Cross-cutting concerns).
+  A last-resort backup moves the database and its sidecars together, rolling
+  back completed moves if one fails. The data-folder notice persists until
+  acknowledged, even after a replacement store opens successfully.
+- `NoteExport` — a versioned JSON snapshot of notes, dates and pin state,
+  written atomically to a file the user chooses in Settings. Clipboard
+  entries are excluded, including pinned clips. Reading and decoding run
+  off the main actor; the entire file and format version are validated
+  before Store merges notes in one save. Existing notes remain untouched.
+  Matching uses text and creation time to second precision, with counts
+  so repeated imports skip matches without collapsing distinct identical
+  notes. Temporary storage refuses imports; failed saves roll back all
+  imported rows. `NoteImportResult` reports added and skipped counts, and
+  `NoteTransferError` owns the localized failure messages.
+- `NoteTransfer` — the native save/open panels and transfer operations used
+  by both Settings and the DEBUG integration probe, so sandbox checks follow
+  the production permission path rather than a test-only file reader.
 - `Schema` — the model's shape history as `VersionedSchema`s, plus the
   `SchemaMigrationPlan` that joins them.
 - `ImageInfo` — pixel size read from the image header (no decode) and the
@@ -105,6 +131,9 @@ a bug in this document.
 - `ContentView` — everything inside the panel: the single field that is both
   search and note entry, the clips and notes lists, selection and hover
   state.
+- `StorageStatusView` — recovery and write-failure notices shared by the
+  panel and Settings, with an action to open the data folder. An in-memory
+  store explicitly warns that notes will be lost on quit.
 - `ItemRow` — one row of the clips and links lists. `FileClip` and `Thumbnail`
   are defined beside it: both are caches that exist because a row body must
   never touch the filesystem or decode an image per render.
@@ -175,7 +204,7 @@ a bug in this document.
   no longer drawing. It also carries the `PanelIndex` the lists were filtered
   from, so the next keystroke filters that instead of the store.
 - `PanelIndex` — the per-item facts the lists are filtered from (kind, link,
-  pin, stamp, identifier, the searchable head of the text), read off the
+  pin, stamp, identifier, the complete searchable text), read off the
   models once per `Store.revision` rather than on every keystroke. It is
   keyed on the revision alone, which is sound only because of the invariant
   below; `ContentView` checks it against the live revision at the moment of
@@ -324,13 +353,14 @@ a bug in this document.
   gate that expiry, history-limit trimming, and Clear History all go through.
 - **`Store.items` is ordered pinned block first, then `usedAt` descending
   within each block, maintained incrementally.** New rows and every mutation
-  that bumps `usedAt` carry `Date()` — the global maximum — so they land at,
-  or `promote(_:)` moves them to, the front of their own block
-  (`insertionIndex`), with no refetch. Outside a full refetch, which sorts (at
+  that bumps `usedAt` carry `Date()`; `insertionIndex` compares live dates to
+  position that row without refetching. This also preserves order when an
+  imported note came from a Mac whose clock was ahead. Outside a full refetch, which sorts (at
   init, and after a failed write; `reload()` is the same refetch plus a
-  revision bump), exactly two mutations re-sort: `togglePin` (the item
+  revision bump), three mutations re-sort: `togglePin` (the item
   crosses blocks) and `undoDelete` (restored rows keep their old `usedAt`, so
-  `insertionIndex` would misfile them). The
+  `insertionIndex` would misfile them), and `importNotes` (restored dates
+  and pins may place new notes anywhere in the order). The
   guard is `isTracked(_:)`: callers hold `Item` references across time (an
   open editor outlives its row), and mutating a reference that trimming or
   expiry already deleted would re-insert the dead model at the front — a ghost

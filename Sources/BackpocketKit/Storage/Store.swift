@@ -9,10 +9,10 @@ import SwiftData
 final class Store: ObservableObject {
     /// Pinned items first, then usedAt descending — see `ordered`. The array
     /// is maintained incrementally rather than refetched: a mutation that
-    /// bumps usedAt sets it to Date(), the global maximum, so the item only
-    /// has to move to the front of its own block (`insertionIndex`). Two
+    /// bumps usedAt moves only that row to its ordered position. Imported
+    /// dates may be ahead of this Mac's clock. Three
     /// changes re-sort instead: pinning, which moves an item across blocks,
-    /// and `undoDelete`, whose restored rows keep their old usedAt.
+    /// `undoDelete`, and imports, whose restored rows keep their old usedAt.
     @Published private(set) var items: [Item] = []
 
     /// Bumped on every mutation. Views must refilter on THIS, not on `items`:
@@ -26,6 +26,14 @@ final class Store: ObservableObject {
     /// Settings surfaces it: silently reporting success for writes that never
     /// land is how a "cleared" history comes back at the next launch.
     @Published private(set) var hasStorageFailure: Bool
+
+    @Published private(set) var recoveryDirectory: URL?
+    let isUsingTemporaryStorage: Bool
+
+    func acknowledgeRecovery() {
+        Persistence.acknowledgeRecovery()
+        recoveryDirectory = nil
+    }
 
     private let context: ModelContext
     private let logger = Logger(subsystem: "dev.m2na.backpocket", category: "store")
@@ -90,6 +98,8 @@ final class Store: ObservableObject {
         // An in-memory fallback container is a storage failure that no later
         // success can clear — every write "succeeds" and none of it survives.
         hasStorageFailure = Persistence.isUsingFallbackStore
+        isUsingTemporaryStorage = Persistence.isUsingFallbackStore
+        recoveryDirectory = Persistence.recoveryDirectory
         fetchItems()
     }
 
@@ -146,10 +156,10 @@ final class Store: ObservableObject {
         return lhs.usedAt > rhs.usedAt
     }
 
-    /// Where a fresh or promoted item lands: pinned items at the very top,
-    /// everything else at the top of the unpinned block.
+    /// The first row that does not precede this one. Comparing dates also
+    /// preserves ordering when imported notes came from a clock ahead of ours.
     private func insertionIndex(for item: Item) -> Int {
-        item.isPinned ? 0 : (items.firstIndex { !$0.isPinned } ?? items.count)
+        items.firstIndex { !Self.ordered($0, item) } ?? items.count
     }
 
     // MARK: Writing
@@ -271,6 +281,54 @@ final class Store: ObservableObject {
         context.insert(note)
         items.insert(note, at: insertionIndex(for: note))
         save()
+    }
+
+    /// Merge a transfer in one save, retaining original dates, pins and all
+    /// text. Never overwrite existing notes or truncate imported content.
+    func importNotes(_ archive: NoteExport) throws -> NoteImportResult {
+        try archive.validate()
+        guard !isUsingTemporaryStorage else { throw NoteTransferError.temporaryStorage }
+
+        // Export dates have second precision. Count matching existing rows
+        // rather than using a Set: two distinct notes created in the same
+        // second with identical text must both survive a round trip.
+        var existing: [ImportedNoteIdentity: Int] = [:]
+        for note in items where note.isNote {
+            existing[
+                ImportedNoteIdentity(content: note.content, createdAt: note.createdAt),
+                default: 0] += 1
+        }
+        var fresh: [Item] = []
+        var skipped = 0
+        for note in archive.notes {
+            let identity = ImportedNoteIdentity(content: note.content, createdAt: note.createdAt)
+            if let count = existing[identity], count > 0 {
+                existing[identity] = count - 1
+                skipped += 1
+                continue
+            }
+            let item = Item(content: note.content, isNote: true)
+            item.createdAt = note.createdAt
+            item.usedAt = note.usedAt
+            item.isPinned = note.isPinned
+            fresh.append(item)
+        }
+        guard !fresh.isEmpty else { return NoteImportResult(imported: 0, skipped: skipped) }
+        fresh.forEach(context.insert)
+        items.append(contentsOf: fresh)
+        items.sort(by: Self.ordered)
+        guard save() else { throw NoteTransferError.storageFailure }
+        return NoteImportResult(imported: fresh.count, skipped: skipped)
+    }
+
+    private struct ImportedNoteIdentity: Hashable {
+        let content: String
+        let createdAtSecond: Double
+
+        init(content: String, createdAt: Date) {
+            self.content = content
+            createdAtSecond = createdAt.timeIntervalSince1970.rounded(.down)
+        }
     }
 
     /// Turns dropped content into a note: the matching clip converts in
@@ -477,8 +535,7 @@ final class Store: ObservableObject {
         items.contains { $0 === item }
     }
 
-    /// usedAt = now is the global maximum, so the front of the item's own
-    /// block keeps `items` ordered. Matched by identity: a note and a clip
+    /// Repositions the touched row. Matched by identity: a note and a clip
     /// may carry equal content.
     private func promote(_ item: Item) {
         item.usedAt = Date()

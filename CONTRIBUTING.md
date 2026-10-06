@@ -52,6 +52,7 @@ All logic lives in `Sources/BackpocketKit` so it can be tested; `Sources/Backpoc
 | `make test` | `swift test` |
 | `make build-mas` | build the App Store variant, in `.build/mas` |
 | `make test-mas` | test the App Store variant, in `.build/mas` |
+| `make test-sandbox-transfer` | signed app processes, sandbox file panels and note migration on a macOS desktop |
 | `make coverage` | line coverage per file, worst first (reported, never gated) |
 | `make mutants` | whether the tests would catch a bug, not just run the line |
 | `make race` | the suite under ThreadSanitizer |
@@ -100,6 +101,36 @@ A change that can be tested comes with a test. What that means here:
 
 If you conclude a change genuinely cannot be tested, say so in the PR and say
 why. That is a reviewable claim; silence is not.
+
+### Sandbox transfer integration
+
+`make test-sandbox-transfer` builds separate DEBUG app bundles for the direct
+and App Store variants, signs the target with the shipping sandbox and
+user-selected read/write entitlements, and drives the production file panels
+through a small native Accessibility driver (`scripts/sandbox-transfer-ui.swift`).
+It requires a logged-in macOS desktop and Accessibility permission for the
+invoking terminal. The driver verifies the selected file row before pressing
+Open; it does not synthesize keystrokes or depend on window focus. It does not
+run in the ordinary `swift test` process or in the headless CI jobs.
+
+The runner proves that the external JSON is unreadable before selection and
+readable afterward, then checks persistence across app exits, repeated imports,
+invalid files, cancellation, sandbox exports and preservation of the source
+store and JSON. Test bundles have identifiers unique to each run, and each
+run's store is beneath `BackpocketTransferProbe/<UUID>` in that bundle's Application
+Support directory. The real app's store and clipboard are never used. The
+runner stops its exact test bundle after every stage, including failure or
+interruption. Test identities without valid DEBUG probe flags exit before
+normal startup, so they cannot register the global shortcut. The runner also
+checks that launching each test bundle without probe flags creates no store
+and exits immediately.
+
+Reports and UI action traces are retained under
+`build/sandbox-transfer/<UUID>/`. Run
+`python3 scripts/test-sandbox-transfer.py --skip-build` to reuse debug builds;
+the runner refuses release binaries, which cannot honor the isolation flags.
+This validates local App Sandbox behavior with the App Store compile variant;
+it does not install a downloaded App Store package or exercise its receipt.
 
 ## DEBUG launch flags
 

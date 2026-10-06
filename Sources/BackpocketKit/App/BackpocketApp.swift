@@ -55,6 +55,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
 
         #if DEBUG
+        if let stage = DebugLaunch.transferProbe {
+            guard Self.isTransferBundle(Bundle.main.bundleIdentifier) else {
+                NSApp.terminate(nil)
+                return
+            }
+            Task { await DebugTransferProbe.run(stage: stage) }
+            return
+        }
+        #endif
+
+        // Transfer bundles must never fall through to normal startup,
+        // including when launched without probe flags or built in release.
+        // Otherwise a leftover test app can register the user's shortcut.
+        if Self.isTransferBundle(Bundle.main.bundleIdentifier) {
+            NSApp.terminate(nil)
+            return
+        }
+
+        #if DEBUG
         // Before any window exists, so every one of them draws in it.
         if let look = DebugLaunch.appearance {
             NSApp.appearance = NSAppearance(named: look == "dark" ? .darkAqua : .aqua)
@@ -115,6 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         Task { await applyDebugLaunchOptions() }
         #endif
+    }
+
+    static func isTransferBundle(_ identifier: String?) -> Bool {
+        guard let identifier else { return false }
+        return ["dev.m2na.backpocket.transfer-source", "dev.m2na.backpocket.transfer-sandbox"]
+            .contains { identifier == $0 || identifier.hasPrefix($0 + ".") }
     }
 
     /// See `DebugLaunch.isCapture`. Always false in a release build.

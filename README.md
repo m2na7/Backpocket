@@ -88,6 +88,16 @@ brew install --cask m2na7/backpocket/backpocket
 
 Or take the zip from [Releases](https://github.com/m2na7/Backpocket/releases/latest) and drop it in Applications. The direct download updates itself from then on.
 
+## Export and import notes
+
+Settings > Data can export all notes, their dates and pin state to a JSON file and import it again. Existing notes stay, and matching notes are skipped. Clipboard history is excluded. Search covers the complete stored text, including long notes.
+
+**Move notes from the free version to the App Store version**
+
+1. In the free version, choose **Settings > Data > Export notes**, save the JSON file, then quit the free version.
+2. Open the App Store version and choose **Settings > Data > Import notes**, then select that file.
+3. Check the completion message and your notes. The free version's data and the JSON file remain intact.
+
 ## Keyboard
 
 | Shortcut | Action |

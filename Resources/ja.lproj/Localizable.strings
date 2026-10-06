@@ -91,6 +91,24 @@
 "settings.resetAll.note" = "すべての項目を削除し、設定を初期状態に戻します。";
 "confirm.cannotUndo" = "この操作は元に戻せません。";
 "settings.storageError" = "一部の変更をディスクに保存できませんでした。ここに表示されている内容と保存されている内容が一致しない場合があります。";
+"storage.temporary" = "履歴とメモは今回の起動中のみ保持され、アプリを終了すると失われます。終了前にメモを書き出してください。";
+"storage.recovered" = "以前の履歴とメモを開けませんでした。データフォルダに復旧用ファイルが残っている可能性があります。削除する前に確認してください。";
+"storage.showBackups" = "データフォルダを開く";
+"storage.dismissRecovery" = "通知を閉じる";
+"export.notes" = "メモを書き出す…";
+"export.notesHint" = "App Store版に移行するには、無料版でメモを書き出して終了し、App Store版でそのJSONファイルを読み込んでください。メモ、日付、ピンの状態を復元します。既存のメモは保持し、一致するメモはスキップします。クリップボード履歴は含みません。";
+"export.failed" = "メモを書き出せませんでした";
+"export.ok" = "OK";
+"import.notes" = "メモを読み込む…";
+"import.inProgress" = "メモを読み込み中…";
+"import.failed" = "メモを読み込めませんでした";
+"import.complete" = "メモの読み込み完了";
+"import.result %lld %lld" = "%lld件のメモを読み込みました。一致する%lld件をスキップしました。既存のメモは保持されています。";
+"import.invalidFile" = "有効なBackpocketメモファイルではありません。Backpocketから書き出したJSONファイルを選択してください。";
+"import.unsupportedVersion" = "バックアップ形式のバージョンが異なります。Backpocketを更新してから読み込んでください。";
+"import.tooLarge" = "メモの移行ファイルは256MB以下にしてください。";
+"import.temporaryStorage" = "一時保存中はメモを読み込めません。バックアップファイルは変更されません。保存先が利用可能になったらアプリを再起動してお試しください。";
+"import.storageFailure" = "メモを保存できなかったため、読み込んだメモは追加されませんでした。バックアップファイルは変更されません。保存先が利用可能になったら再度お試しください。";
 
 "edit.save" = "保存";
 "edit.saveAndPaste" = "保存して貼り付け";
@@ -142,4 +160,3 @@
 "a11y.hint.edit" = "このメモを編集します";
 "a11y.noteText" = "メモの内容";
 "a11y.characters %lld" = "%lld文字";
-

@@ -91,6 +91,24 @@
 "settings.resetAll.note" = "Deletes every item and returns all settings to their defaults.";
 "confirm.cannotUndo" = "This can't be undone.";
 "settings.storageError" = "Some changes couldn't be written to disk, so what you see here may not match what is stored.";
+"storage.temporary" = "Your history and notes are stored only for this session and will be lost when Backpocket quits. Export your notes before quitting.";
+"storage.recovered" = "Backpocket couldn't open your previous history and notes. Recovery files may be in the data folder; check it before discarding anything.";
+"storage.showBackups" = "Open data folder";
+"storage.dismissRecovery" = "Dismiss notice";
+"export.notes" = "Export notes…";
+"export.notesHint" = "Moving to the App Store version? Export notes here and quit the free version, then import the JSON file in the App Store version. Notes, dates and pins are preserved. Existing notes stay; matching notes are skipped. Clipboard history is excluded.";
+"export.failed" = "Couldn't export notes";
+"export.ok" = "OK";
+"import.notes" = "Import notes…";
+"import.inProgress" = "Importing notes…";
+"import.failed" = "Couldn't import notes";
+"import.complete" = "Notes imported";
+"import.result %lld %lld" = "Imported %lld notes. Skipped %lld matching notes. Existing notes were kept.";
+"import.invalidFile" = "This isn't a valid Backpocket notes file. Choose a JSON file exported from Backpocket.";
+"import.unsupportedVersion" = "This file uses a different backup format. Update Backpocket before importing it.";
+"import.tooLarge" = "Notes transfer files must be 256 MB or smaller.";
+"import.temporaryStorage" = "Notes can't be imported while storage is temporary. Your backup file is unchanged. Reopen Backpocket once storage is available, then try again.";
+"import.storageFailure" = "The notes couldn't be saved. No imported notes were added. Your backup file is unchanged; try again once storage is available.";
 
 "edit.save" = "Save";
 "edit.saveAndPaste" = "Save and Paste";
@@ -142,4 +160,3 @@
 "a11y.hint.edit" = "Opens this note for editing";
 "a11y.noteText" = "Note text";
 "a11y.characters %lld" = "%lld characters";
-

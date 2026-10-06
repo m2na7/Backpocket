@@ -22,14 +22,9 @@ struct PanelIndex {
         let isLink: Bool
         let isPinned: Bool
         let usedAt: Date
-        /// The text the search runs over. See `searchCap`.
+        /// Complete text, captured once per revision rather than read on every keystroke.
         let haystack: String
     }
-
-    /// ponytail: only the head of each item is searched — a full-content scan
-    /// is O(items × 200k chars) per keystroke; build a full-text index if
-    /// matches past the cap ever matter.
-    static let searchCap = 10_000
 
     /// The store revision this was taken at. Nil for one taken from a bare
     /// list of items, and for the empty one a panel starts with, so that
@@ -56,21 +51,11 @@ struct PanelIndex {
                 isLink: Item.linkURL(in: content, isNote: isNote, isImage: item.isImage) != nil,
                 isPinned: item.isPinned,
                 usedAt: item.usedAt,
-                haystack: Self.haystack(content)
+                haystack: content
             )
         }
     }
 
-    /// Exactly `String(content.prefix(searchCap))`, without walking a short
-    /// item's characters to find that out: a Character is at least one
-    /// UTF-16 unit, so text of at most `searchCap` units is at most that
-    /// many characters, and the prefix is all of it. Only an item past the
-    /// cap pays for the cut — and keeps a copy of up to `searchCap`
-    /// characters, tens of kilobytes, alongside its content for as long as
-    /// the index lives.
-    static func haystack(_ content: String) -> String {
-        content.utf16.count <= searchCap ? content : String(content.prefix(searchCap))
-    }
 }
 
 extension PanelIndex {

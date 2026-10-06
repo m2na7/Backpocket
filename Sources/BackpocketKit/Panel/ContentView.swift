@@ -223,7 +223,8 @@ struct ContentView: View {
     // MARK: Body
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            StorageStatusView(store: store)
             // With automatic paste off no permission is needed, so don't block with onboarding.
             if trusted || !PasteBehavior.isAutomatic || Self.bypassesOnboarding {
                 main

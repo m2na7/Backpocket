@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BackpocketKit
@@ -13,6 +14,33 @@ import Testing
 @MainActor
 @Suite("Distribution variant")
 struct DistributionVariantTests {
+    @Test func transferIdentitiesCannotStartTheNormalApp() {
+        for base in ["dev.m2na.backpocket.transfer-source", "dev.m2na.backpocket.transfer-sandbox"]
+        {
+            #expect(AppDelegate.isTransferBundle(base))
+            #expect(AppDelegate.isTransferBundle(base + "." + UUID().uuidString.lowercased()))
+        }
+    }
+
+    @Test func ordinaryAppIdentitiesAreNotTransferBundles() {
+        for identifier in [
+            nil, "dev.m2na.backpocket", "dev.m2na.backpocket.mas",
+            "dev.m2na.backpocket.transfer-source-other",
+        ] {
+            #expect(!AppDelegate.isTransferBundle(identifier))
+        }
+    }
+
+    @Test func sandboxAllowsWritingUserChosenNoteExports() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appending(path: "Resources/Backpocket.entitlements"))
+        let entitlements = try #require(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(entitlements["com.apple.security.files.user-selected.read-write"] as? Bool == true)
+        #expect(entitlements["com.apple.security.files.user-selected.read-only"] == nil)
+    }
+
     #if BACKPOCKET_MAS
     @Test func theStoreBuildNeverPromptsAndHasNoUpdater() {
         #expect(Paster.mayPrompt == false)
